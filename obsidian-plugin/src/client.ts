@@ -1,5 +1,5 @@
 import { requestUrl } from "obsidian";
-import type { AddResult, EnrichedResult, LatticeInfo, QueryResult, RemoveResult } from "./types";
+import type { AddResult, EnrichedResult, LatticeInfo, QueryLocation, QueryResult, RemoveResult, XRayResult } from "./types";
 
 export class LatticeClient {
 	constructor(private baseUrl: string) {}
@@ -60,6 +60,57 @@ export class LatticeClient {
 		}
 	}
 
+	async searchAdvanced(
+		text: string,
+		topK = 10,
+		enableCascade = true,
+		cascadeDepth = 2,
+		enableContradictions = false,
+		enableSubgraph = false,
+		enableLexical = true,
+		enableCrossEncoder = false,
+		boostTopics: string[] = [],
+		suppressTopics: string[] = [],
+	): Promise<EnrichedResult | null> {
+		try {
+			const body: Record<string, unknown> = {
+				text,
+				top_k: topK,
+				enable_cascade: enableCascade,
+				cascade_depth: cascadeDepth,
+				enable_contradictions: enableContradictions,
+				enable_subgraph: enableSubgraph,
+				enable_lexical: enableLexical,
+				enable_cross_encoder: enableCrossEncoder,
+			};
+			if (boostTopics.length) body.boost_topics = boostTopics;
+			if (suppressTopics.length) body.suppress_topics = suppressTopics;
+
+			const res = await requestUrl({
+				url: `${this.baseUrl}/search`,
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify(body),
+			});
+			return res.json as EnrichedResult;
+		} catch {
+			return null;
+		}
+	}
+
+	async xray(): Promise<XRayResult | null> {
+		try {
+			const res = await requestUrl({
+				url: `${this.baseUrl}/xray`,
+				method: "GET",
+				headers: { Accept: "application/json" },
+			});
+			return res.json as XRayResult;
+		} catch {
+			return null;
+		}
+	}
+
 	async query(text: string, topK = 10): Promise<QueryResult | null> {
 		try {
 			const res = await requestUrl({
@@ -93,6 +144,20 @@ export class LatticeClient {
 				}),
 			});
 			return res.json as AddResult;
+		} catch {
+			return null;
+		}
+	}
+
+	async locate(text: string): Promise<QueryLocation | null> {
+		try {
+			const res = await requestUrl({
+				url: `${this.baseUrl}/locate`,
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ text }),
+			});
+			return res.json as QueryLocation;
 		} catch {
 			return null;
 		}

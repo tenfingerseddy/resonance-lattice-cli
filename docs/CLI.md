@@ -1,8 +1,41 @@
+---
+title: CLI
+slug: cli
+description: The primary command-line interface for building, querying, profiling, composing, and exporting Resonance Lattice cartridges.
+nav_group: Interfaces
+nav_order: 5
+aliases:
+  - integration
+---
+
 # Resonance Lattice CLI Reference
 
-The `rlat` command-line interface is the primary way to build, query, inspect, and manage Resonance Lattice cartridges. This document is the single source of truth for all 25 CLI commands.
+The `rlat` command-line interface is the primary terminal surface for Resonance Lattice. Use it to build cartridges, inspect them, query them, compose them, and integrate them into local workflows.
 
-For related documentation see [TECHNICAL.md](TECHNICAL.md) (internals), [RQL_REFERENCE.md](RQL_REFERENCE.md) (programmable query language), and the [HTTP API reference](../website/src/content/docs/api-reference.md).
+## What Is The CLI?
+
+The CLI is the most complete single interface in the project. It exposes the cartridge lifecycle, retrieval paths, diagnostics, composition operations, HTTP serving, MCP startup, export flows, and skill commands.
+
+## Why Should I Use It?
+
+Use the CLI when you want:
+
+- the full product surface in one place
+- terminal-first workflows and scripts
+- local automation without an assistant client
+- explicit control over cartridge build and query behavior
+
+## How Does It Work?
+
+The CLI wraps the core lattice runtime and organizes the product into command groups: build and lifecycle, query and analysis, serve and integration, algebra and composition, export, and skills.
+
+## How Do I Use It?
+
+Start with `build`, `search`, `profile`, and `compare`. Then move into `summary`, `mcp`, `serve`, `compose`, and the diagnostic commands when you need more control or deeper inspection.
+
+## Technical Guide And Reference
+
+For related documentation, see [Cartridge Architecture](/docs/cartridge-architecture), [MCP](/docs/mcp), [API Reference](/docs/api-reference), [Encoders](/docs/encoders), and [RQL Reference](/docs/rql-reference).
 
 **Version**: 0.9.0
 
@@ -241,7 +274,7 @@ rlat resonate project.rlat "query" --mode custom --custom-prompt "You are a code
 
 ## Encoder System
 
-For the full encoder guide — available presets, comparison table, choosing an encoder for code vs prose vs multilingual — see [ENCODERS.md](ENCODERS.md).
+For the full encoder guide — available presets, comparison table, choosing an encoder for code vs prose vs multilingual — see [Encoder Guide](/docs/encoders).
 
 ### Resolution Order
 
@@ -253,7 +286,7 @@ When loading an encoder, the CLI resolves in this order:
 
 In practice, most users never need `--encoder`. The cartridge stores its encoder at build time, and queries restore it automatically. Use `--encoder random` for fast testing without downloading a model.
 
-> The `--checkpoint` flag exists for experimental trained-head loading but is **not recommended** for production use. See [ENCODER_QUALITY.md](ENCODER_QUALITY.md) for details.
+> The `--checkpoint` flag exists for experimental trained-head loading but is **not recommended** for production use. Use the benchmark guidance in [Benchmarks](/docs/benchmarks) and [Benchmark Runbook](/docs/benchmark-runbook) before promoting any trained-head path.
 
 ### ONNX Acceleration
 

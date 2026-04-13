@@ -49,18 +49,34 @@ export class ResonanceLatticeView extends ItemView {
 		this.actionsEl = container.createDiv({ cls: "rl-sidebar-section" });
 		this.actionsEl.createEl("h4", { text: "Actions" });
 
-		this.createButton(this.actionsEl, "Search", "search", () =>
+		this.createButton(this.actionsEl, "Explorer", "radar", () =>
+			this.plugin.app.commands.executeCommandById("resonance-lattice:open-graph"),
+		);
+		this.createButton(this.actionsEl, "Quick Search", "search", () =>
 			this.plugin.app.commands.executeCommandById("resonance-lattice:search"),
 		);
-		this.createButton(this.actionsEl, "Build", "hammer", () =>
-			this.plugin.app.commands.executeCommandById("resonance-lattice:build"),
-		);
-		this.createButton(this.actionsEl, "Sync", "refresh-cw", () =>
-			this.plugin.app.commands.executeCommandById("resonance-lattice:sync"),
-		);
-		this.createButton(this.actionsEl, "Build & Start", "play", () =>
-			this.plugin.app.commands.executeCommandById("resonance-lattice:rebuild-and-restart"),
-		);
+
+		if (this.plugin.isExternalMode()) {
+			this.createButton(this.actionsEl, "Start Server", "play", () =>
+				this.plugin.app.commands.executeCommandById("resonance-lattice:start-server"),
+			);
+			this.createButton(this.actionsEl, "Restart Server", "rotate-cw", () =>
+				this.plugin.app.commands.executeCommandById("resonance-lattice:restart-server"),
+			);
+		} else {
+			this.createButton(this.actionsEl, "Build", "hammer", () =>
+				this.plugin.app.commands.executeCommandById("resonance-lattice:build"),
+			);
+			this.createButton(this.actionsEl, "Sync", "refresh-cw", () =>
+				this.plugin.app.commands.executeCommandById("resonance-lattice:sync"),
+			);
+			this.createButton(this.actionsEl, "Build & Start", "play", () =>
+				this.plugin.app.commands.executeCommandById("resonance-lattice:rebuild-and-restart"),
+			);
+			this.createButton(this.actionsEl, "Restart Server", "rotate-cw", () =>
+				this.plugin.app.commands.executeCommandById("resonance-lattice:restart-server"),
+			);
+		}
 
 		// ── Progress section (hidden until build starts) ──
 		this.progressSection = container.createDiv({ cls: "rl-sidebar-section rl-sidebar-progress" });
@@ -197,6 +213,10 @@ export class ResonanceLatticeView extends ItemView {
 		setIcon(iconSpan, icon);
 		btn.prepend(iconSpan);
 		btn.addEventListener("click", onClick);
+	}
+
+	refresh(): void {
+		this.onOpen();
 	}
 
 	async onClose(): Promise<void> {

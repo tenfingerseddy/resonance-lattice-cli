@@ -144,10 +144,17 @@
 
 /* ── Status ─────────────────────────────────────────────────────── */
 
+.rl-status-row {
+	display: flex;
+	align-items: center;
+	padding: 0 4px;
+}
+
 .rl-status {
 	padding: 4px 12px;
 	font-size: 0.85em;
 	color: var(--text-muted);
+	flex: 1;
 }
 
 .rl-status-error {
@@ -499,4 +506,402 @@
 
 .rl-sidebar-progress .rl-progress-stats {
 	font-size: 0.75em;
+}
+
+/* ── View toggle (list / graph) ──────────────────────────────────── */
+
+.rl-view-toggle {
+	display: flex;
+	gap: 2px;
+	margin-left: auto;
+}
+
+.rl-toggle-btn {
+	background: none;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	padding: 2px 6px;
+	cursor: pointer;
+	color: var(--text-muted);
+	display: flex;
+	align-items: center;
+}
+
+.rl-toggle-btn:hover {
+	background: var(--background-modifier-hover);
+}
+
+.rl-toggle-btn.rl-toggle-active {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	border-color: var(--interactive-accent);
+}
+
+.rl-toggle-btn svg {
+	width: 14px;
+	height: 14px;
+}
+
+/* ── Resonance Graph ─────────────────────────────────────────────── */
+
+.rl-graph {
+	width: 100%;
+	height: 400px;
+}
+
+/* Edges */
+.rl-edge-similarity {
+	stroke: var(--text-faint);
+	fill: none;
+}
+
+.rl-edge-contradiction {
+	stroke: var(--text-error);
+	fill: none;
+	stroke-dasharray: 6 3;
+}
+
+/* Nodes */
+.rl-node-bg {
+	fill: var(--background-primary);
+}
+
+.rl-node-query {
+	fill: var(--interactive-accent);
+	opacity: 0.9;
+}
+
+.rl-node-related {
+	fill: none;
+	stroke: var(--text-muted);
+	stroke-width: 1.5;
+}
+
+.rl-graph-node {
+	cursor: pointer;
+	transition: opacity 0.15s ease;
+}
+
+/* Hover highlight / dim */
+.rl-graph-dimmed .rl-graph-node {
+	opacity: 0.15;
+}
+
+.rl-graph-dimmed .rl-graph-node.rl-graph-highlighted {
+	opacity: 1;
+}
+
+.rl-graph-dimmed .rl-edge-similarity,
+.rl-graph-dimmed .rl-edge-contradiction {
+	opacity: 0.05 !important;
+}
+
+.rl-graph-dimmed .rl-edge-highlighted {
+	opacity: 0.8 !important;
+}
+
+/* Tooltip */
+.rl-graph-tooltip {
+	position: absolute;
+	z-index: 100;
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	padding: 8px 10px;
+	max-width: 260px;
+	font-size: 0.8em;
+	color: var(--text-normal);
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+	pointer-events: none;
+	line-height: 1.4;
+	white-space: pre-line;
+}
+
+/* Band legend */
+.rl-graph-legend-bar {
+	display: flex;
+	gap: 12px;
+	padding: 4px 8px;
+	font-size: 0.72em;
+	color: var(--text-muted);
+	justify-content: center;
+}
+
+.rl-legend-item {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+}
+
+.rl-legend-dot {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	flex-shrink: 0;
+}
+
+/* Query node pulse */
+@keyframes rl-pulse {
+	0%, 100% { opacity: 0.9; }
+	50% { opacity: 0.6; }
+}
+
+.rl-node-query {
+	animation: rl-pulse 2.5s ease-in-out infinite;
+}
+
+.rl-node-label-query {
+	pointer-events: none;
+}
+
+.rl-node-label {
+	pointer-events: none;
+}
+
+/* ── Resonance Explorer (full-page view) ─────────────────────────── */
+
+.rl-explorer {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	background: var(--background-primary);
+}
+
+.rl-explorer-topbar {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 6px 12px;
+	border-bottom: 1px solid var(--background-modifier-border);
+	flex-shrink: 0;
+}
+
+.rl-explorer-search {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex: 1;
+	max-width: 500px;
+	background: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	padding: 4px 10px;
+}
+
+.rl-explorer-search .rl-search-input {
+	font-size: 0.95em;
+}
+
+.rl-explorer-status {
+	font-size: 0.82em;
+	color: var(--text-muted);
+	white-space: nowrap;
+}
+
+.rl-explorer-body {
+	display: flex;
+	flex: 1;
+	overflow: hidden;
+}
+
+.rl-explorer-content {
+	flex: 1;
+	position: relative;
+	overflow-y: auto;
+}
+
+.rl-explorer-content .rl-graph {
+	width: 100%;
+	height: 100%;
+}
+
+.rl-explorer-results {
+	padding: 0 8px;
+}
+
+.rl-explorer-results .rl-result-item {
+	max-width: 900px;
+}
+
+.rl-fullgraph-empty {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	height: 100%;
+	color: var(--text-faint);
+	font-size: 1.1em;
+}
+
+/* ── Control panel ───────────────────────────────────────────────── */
+
+.rl-explorer-controls {
+	width: 260px;
+	flex-shrink: 0;
+	border-left: 1px solid var(--background-modifier-border);
+	background: var(--background-secondary);
+	overflow-y: auto;
+	padding: 10px 12px;
+}
+
+.rl-ctrl-section {
+	margin-bottom: 16px;
+}
+
+.rl-ctrl-section h4 {
+	margin: 0 0 8px 0;
+	font-size: 0.78em;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: var(--text-muted);
+}
+
+.rl-ctrl-toggle {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 3px 0;
+}
+
+.rl-ctrl-label {
+	font-size: 0.82em;
+	color: var(--text-normal);
+}
+
+.rl-ctrl-toggle input[type="checkbox"] {
+	accent-color: var(--interactive-accent);
+}
+
+.rl-ctrl-field {
+	margin-bottom: 6px;
+}
+
+.rl-ctrl-field .rl-ctrl-label {
+	display: block;
+	margin-bottom: 2px;
+	font-size: 0.78em;
+	color: var(--text-muted);
+}
+
+.rl-ctrl-input {
+	width: 100%;
+	padding: 4px 6px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	background: var(--background-primary);
+	color: var(--text-normal);
+	font-size: 0.82em;
+}
+
+.rl-ctrl-slider {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	padding: 3px 0;
+}
+
+.rl-ctrl-slider input[type="range"] {
+	width: 100%;
+	accent-color: var(--interactive-accent);
+	height: 4px;
+}
+
+.rl-ctrl-btn {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	width: 100%;
+	padding: 5px 8px;
+	margin-top: 6px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	background: var(--background-primary);
+	color: var(--text-normal);
+	cursor: pointer;
+	font-size: 0.82em;
+}
+
+.rl-ctrl-btn:hover {
+	background: var(--background-modifier-hover);
+}
+
+.rl-ctrl-btn .rl-btn-icon svg {
+	width: 12px;
+	height: 12px;
+}
+
+/* ── X-ray display ───────────────────────────────────────────────── */
+
+.rl-xray-results {
+	margin-top: 8px;
+}
+
+.rl-xray-summary {
+	display: flex;
+	gap: 8px;
+	flex-wrap: wrap;
+	font-size: 0.78em;
+	color: var(--text-muted);
+	margin-bottom: 8px;
+}
+
+.rl-xray-band {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 2px 0;
+	font-size: 0.78em;
+}
+
+.rl-xray-band-name {
+	width: 60px;
+	color: var(--text-normal);
+	font-weight: 500;
+	text-transform: uppercase;
+	font-size: 0.9em;
+}
+
+.rl-xray-label {
+	width: 52px;
+	text-align: center;
+	padding: 1px 4px;
+	border-radius: 3px;
+	font-size: 0.85em;
+	font-weight: 500;
+}
+
+.rl-xray-rich { background: hsla(150, 60%, 45%, 0.2); color: hsl(150, 60%, 45%); }
+.rl-xray-adequate { background: hsla(210, 60%, 50%, 0.2); color: hsl(210, 60%, 50%); }
+.rl-xray-thin { background: hsla(35, 80%, 50%, 0.2); color: hsl(35, 80%, 50%); }
+.rl-xray-noisy { background: hsla(0, 65%, 50%, 0.2); color: hsl(0, 65%, 50%); }
+
+.rl-xray-bar {
+	flex: 1;
+	height: 4px;
+	background: var(--background-modifier-border);
+	border-radius: 2px;
+	overflow: hidden;
+}
+
+.rl-xray-bar-fill {
+	height: 100%;
+	background: var(--interactive-accent);
+	border-radius: 2px;
+}
+
+.rl-xray-snr {
+	width: 48px;
+	text-align: right;
+	color: var(--text-faint);
+}
+
+.rl-xray-diag {
+	margin-top: 8px;
+	padding-top: 6px;
+	border-top: 1px solid var(--background-modifier-border);
+}
+
+.rl-xray-diag-item {
+	font-size: 0.75em;
+	color: var(--text-muted);
+	padding: 1px 0;
 }

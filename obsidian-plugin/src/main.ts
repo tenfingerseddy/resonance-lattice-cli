@@ -4,6 +4,7 @@ import { ProcessManager } from "./process";
 import { ProgressModal, type ProgressEvent } from "./progress-modal";
 import { SearchModal } from "./search-modal";
 import { ResonanceLatticeView, VIEW_TYPE } from "./sidebar-view";
+import { ResonanceGraphView, GRAPH_VIEW_TYPE } from "./graph-view";
 import {
 	DEFAULT_SETTINGS,
 	ResonanceLatticeSettingTab,
@@ -34,6 +35,11 @@ export default class ResonanceLatticePlugin extends Plugin {
 			return this.sidebarView;
 		});
 
+		// ── Full-page graph view ──
+		this.registerView(GRAPH_VIEW_TYPE, (leaf) => {
+			return new ResonanceGraphView(leaf, this);
+		});
+
 		// Ribbon icon to open sidebar
 		this.addRibbonIcon("radar", "Resonance Lattice", () => {
 			this.activateSidebar();
@@ -47,7 +53,7 @@ export default class ResonanceLatticePlugin extends Plugin {
 
 		this.addCommand({
 			id: "search",
-			name: "Search",
+			name: "Quick search",
 			hotkeys: [{ modifiers: ["Mod", "Shift"], key: "r" }],
 			callback: () => this.openSearch(),
 		});
@@ -71,6 +77,18 @@ export default class ResonanceLatticePlugin extends Plugin {
 		});
 
 		this.addCommand({
+			id: "start-server",
+			name: "Start server",
+			callback: () => this.startServer(),
+		});
+
+		this.addCommand({
+			id: "restart-server",
+			name: "Restart server",
+			callback: () => this.restartServer(),
+		});
+
+		this.addCommand({
 			id: "server-info",
 			name: "Show server info",
 			callback: () => this.showServerInfo(),
@@ -86,6 +104,13 @@ export default class ResonanceLatticePlugin extends Plugin {
 			id: "open-sidebar",
 			name: "Open sidebar",
 			callback: () => this.activateSidebar(),
+		});
+
+		this.addCommand({
+			id: "open-graph",
+			name: "Open explorer",
+			hotkeys: [{ modifiers: ["Mod", "Shift"], key: "e" }],
+			callback: () => this.openGraphView(),
 		});
 
 		// Settings tab
@@ -142,6 +167,7 @@ export default class ResonanceLatticePlugin extends Plugin {
 		}
 		this.processManager.destroy();
 		this.app.workspace.detachLeavesOfType(VIEW_TYPE);
+		this.app.workspace.detachLeavesOfType(GRAPH_VIEW_TYPE);
 	}
 
 	async loadSettings(): Promise<void> {
@@ -151,9 +177,13 @@ export default class ResonanceLatticePlugin extends Plugin {
 	async saveSettings(): Promise<void> {
 		await this.saveData(this.settings);
 		this.client.setBaseUrl(`http://127.0.0.1:${this.settings.port}`);
+		this.sidebarView?.refresh();
 	}
 
 	private getCartridgePath(): string {
+		if (this.isExternalMode() && this.settings.externalCartridgePath) {
+			return this.settings.externalCartridgePath;
+		}
 		const adapter = this.app.vault.adapter;
 		const basePath = (adapter as any).getBasePath?.() || "";
 		return path.join(basePath, ".obsidian", "plugins", "resonance-lattice", "vault.rlat");
@@ -162,6 +192,10 @@ export default class ResonanceLatticePlugin extends Plugin {
 	private getVaultPath(): string {
 		const adapter = this.app.vault.adapter;
 		return (adapter as any).getBasePath?.() || "";
+	}
+
+	isExternalMode(): boolean {
+		return this.settings.cartridgeMode === "external";
 	}
 
 	// ── Search ──────────────────────────────────────────────────────
@@ -186,6 +220,11 @@ export default class ResonanceLatticePlugin extends Plugin {
 	}
 
 	private async buildCartridge(): Promise<void> {
+		if (this.isExternalMode()) {
+			new Notice("Build is not available in external cartridge mode.");
+			return;
+		}
+
 		const vaultPath = this.getVaultPath();
 		if (!vaultPath) {
 			new Notice("Could not determine vault path.");
@@ -217,6 +256,11 @@ export default class ResonanceLatticePlugin extends Plugin {
 	}
 
 	private async syncCartridge(): Promise<void> {
+		if (this.isExternalMode()) {
+			new Notice("Sync is not available in external cartridge mode.");
+			return;
+		}
+
 		const vaultPath = this.getVaultPath();
 		const cartridgePath = this.getCartridgePath();
 
@@ -263,7 +307,9 @@ export default class ResonanceLatticePlugin extends Plugin {
 	private async rebuildAndRestart(): Promise<void> {
 		this.processManager.stopServer();
 		this.updateStatusBar("offline");
-		await this.buildCartridge();
+		if (!this.isExternalMode()) {
+			await this.buildCartridge();
+		}
 		await this.startServer();
 	}
 
@@ -294,15 +340,40 @@ export default class ResonanceLatticePlugin extends Plugin {
 		}
 	}
 
+	// ── Restart server ─────────────────────────────────────────────
+
+	private async restartServer(): Promise<void> {
+		this.processManager.stopServer();
+		this.updateStatusBar("restarting\u2026");
+		// Wait for the old process to release the port
+		await new Promise((resolve) => setTimeout(resolve, 2000));
+		await this.startServer();
+	}
+
+	// ── Graph view ─────────────────────────────────────────────────
+
+	private async openGraphView(): Promise<void> {
+		const existing = this.app.workspace.getLeavesOfType(GRAPH_VIEW_TYPE);
+		if (existing.length > 0) {
+			this.app.workspace.revealLeaf(existing[0]);
+			return;
+		}
+		const leaf = this.app.workspace.getLeaf("tab");
+		await leaf.setViewState({ type: GRAPH_VIEW_TYPE, active: true });
+		this.app.workspace.revealLeaf(leaf);
+	}
+
 	// ── Live file updates via HTTP endpoints ────────────────────────
 
 	private onFileChanged(file: TFile): void {
+		if (this.isExternalMode()) return;
 		if (!this.settings.autoSync) return;
 		this.pendingChanges.add(file.path);
 		this.scheduleLiveSync();
 	}
 
 	private onFileDeleted(file: TFile): void {
+		if (this.isExternalMode()) return;
 		if (!this.settings.autoSync) return;
 		this.pendingDeletes.add(file.path);
 		this.pendingChanges.delete(file.path);
@@ -367,7 +438,12 @@ export default class ResonanceLatticePlugin extends Plugin {
 	private async startServer(): Promise<boolean> {
 		const cartridgePath = this.getCartridgePath();
 		if (!existsSync(cartridgePath)) {
-			this.updateStatusBar("no cartridge");
+			if (this.isExternalMode()) {
+				this.updateStatusBar("file not found");
+				new Notice(`Resonance Lattice: External cartridge not found: ${cartridgePath}`, 8000);
+			} else {
+				this.updateStatusBar("no cartridge");
+			}
 			return false;
 		}
 
@@ -397,7 +473,7 @@ export default class ResonanceLatticePlugin extends Plugin {
 	private async tryAutoStart(): Promise<void> {
 		const cartridgePath = this.getCartridgePath();
 		if (!existsSync(cartridgePath)) {
-			this.updateStatusBar("no cartridge");
+			this.updateStatusBar(this.isExternalMode() ? "file not found" : "no cartridge");
 			return;
 		}
 

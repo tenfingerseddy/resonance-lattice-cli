@@ -1,3 +1,12 @@
+---
+title: RQL Reference
+slug: rql-reference
+description: Complete reference for RQL operations, types, fluent DSL patterns, and extended field capabilities.
+nav_group: Deep Dives
+nav_order: 40
+aliases:
+---
+
 # RQL — Resonance Query Language Reference
 
 > Complete reference for all RQL operations, types, and usage patterns.
@@ -5,6 +14,22 @@
 **Version**: 0.9.0 | **Operations**: ~290 across 10 domains + composition, lenses, temporal, access control
 
 ---
+
+## What Is RQL?
+
+RQL is the programmable query and transformation layer for Resonance Lattice fields. It exposes the semantic model directly instead of only through end-user commands.
+
+## Why Should I Use It?
+
+Use RQL when you need fine-grained control over field operations, composition, diagnostics, or experimental analysis that goes beyond the CLI.
+
+## How Does It Work?
+
+RQL organizes field operations into domains and exposes both direct function calls and a fluent `Field` DSL for composition.
+
+## How Do I Use This Reference?
+
+Start with the quick start and type system, then move through the operation domains. Use the extended capabilities sections when you need composition, temporal, access-control, or routing features.
 
 ## Quick Start
 

@@ -78,8 +78,9 @@ onnx_backbone/
 beir_data/
 benchmarks/results/beir/scifact_cache/
 
-# Primer quality benchmark cache (cloned repos, cartridges)
+# Benchmark caches (cloned repos, cartridges, primers)
 benchmarks/.primer_cache/
+benchmarks/.bakeoff_cache/
 
 # Large experiment checkpoints (binary, reproduce via training)
 experiments/checkpoints/phase3_*/

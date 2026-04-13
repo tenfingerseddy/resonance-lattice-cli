@@ -1,3 +1,12 @@
+---
+title: Skills Integration and Architecture
+slug: skill-integration
+description: Cartridge-backed skills, the four-tier injection model, routing, gating, and the runtime architecture behind dynamic skill context.
+nav_group: Retrieval, Context, and Intelligence
+nav_order: 20
+aliases:
+---
+
 # Skill Integration: Resonance Lattice as the Semantic Intelligence Layer
 
 > **Status**: Phase 1 shipped, Phase 2-4 in design
@@ -5,6 +14,22 @@
 > **Depends on**: RL 0.9.0+, Claude Code skills
 
 ---
+
+## What Are Cartridge-Backed Skills?
+
+Cartridge-backed skills are normal skills whose knowledge layer is supplied dynamically from one or more Resonance Lattice cartridges instead of only from static `SKILL.md` content.
+
+## Why Should I Use Them?
+
+Use cartridge-backed skills when the workflow is stable but the relevant knowledge should adapt to the current request. This is the main path from static skill documents to targeted, query-aware context injection.
+
+## How Does The Architecture Work?
+
+The model is a four-tier injection pipeline backed by frontmatter, runtime resolution, routing, gating, and cartridge composition.
+
+## How Do I Use This Document?
+
+Read the shipped phase, the four-tier model, the frontmatter schema, and the runtime sections first. Then use the implementation phases and trade-offs sections when you need the deeper design details.
 
 ## Thesis
 
@@ -23,6 +48,8 @@ But skills today are static documents. A 500-line SKILL.md loads the same conten
 - **Graceful degradation** — if any tier fails, the others still work
 
 ---
+
+## Technical Guide
 
 ## What's Shipped (Phase 1)
 

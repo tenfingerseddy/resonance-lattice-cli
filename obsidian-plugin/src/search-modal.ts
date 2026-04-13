@@ -2,6 +2,7 @@ import { App, Modal, setIcon } from "obsidian";
 import type { LatticeClient } from "./client";
 import type { ContradictionPair, EnrichedResult, SearchResult } from "./types";
 import type { ResonanceLatticeSettings } from "./settings";
+import { ResonanceGraph, buildGraphData, type GraphNode } from "./resonance-graph";
 
 export class SearchModal extends Modal {
 	private inputEl!: HTMLInputElement;
@@ -14,6 +15,10 @@ export class SearchModal extends Modal {
 	private resultEls: HTMLElement[] = [];
 	private debounceTimer: ReturnType<typeof setTimeout> | null = null;
 	private lastResult: EnrichedResult | null = null;
+	private viewMode: "list" | "graph" = "list";
+	private graph: ResonanceGraph | null = null;
+	private listBtn!: HTMLElement;
+	private graphBtn!: HTMLElement;
 
 	constructor(
 		app: App,
@@ -42,8 +47,23 @@ export class SearchModal extends Modal {
 		this.coverageSection = contentEl.createDiv("rl-coverage-section");
 		this.coverageSection.style.display = "none";
 
-		// Status line
-		this.statusEl = contentEl.createDiv("rl-status");
+		// Status line + view toggle
+		const statusRow = contentEl.createDiv({ cls: "rl-status-row" });
+		this.statusEl = statusRow.createDiv("rl-status");
+		const viewToggle = statusRow.createDiv("rl-view-toggle");
+
+		this.listBtn = viewToggle.createEl("button", { cls: "rl-toggle-btn" });
+		setIcon(this.listBtn, "list");
+		this.listBtn.title = "List view";
+		this.listBtn.addEventListener("click", () => this.setViewMode("list"));
+
+		this.graphBtn = viewToggle.createEl("button", { cls: "rl-toggle-btn" });
+		setIcon(this.graphBtn, "git-fork");
+		this.graphBtn.title = "Graph view";
+		this.graphBtn.addEventListener("click", () => this.setViewMode("graph"));
+
+		this.viewMode = this.settings.defaultGraphView ? "graph" : "list";
+		this.updateToggleButtons();
 
 		// Results
 		this.resultsContainer = contentEl.createDiv("rl-results");
@@ -65,6 +85,8 @@ export class SearchModal extends Modal {
 		if (this.debounceTimer) {
 			clearTimeout(this.debounceTimer);
 		}
+		this.graph?.destroy();
+		this.graph = null;
 		this.contentEl.empty();
 	}
 
@@ -143,6 +165,14 @@ export class SearchModal extends Modal {
 			count > 0 ? `${count} result${count !== 1 ? "s" : ""} \u00b7 ${Math.round(result.latency_ms)}ms` : "No results found",
 		);
 
+		if (this.viewMode === "graph" && count > 0) {
+			this.renderGraph(result);
+		} else {
+			this.renderListView(result);
+		}
+	}
+
+	private renderListView(result: EnrichedResult): void {
 		// ── Result items ──
 		for (const item of result.results) {
 			const el = this.createResultItem(item, result.coverage?.band_names);
@@ -155,6 +185,51 @@ export class SearchModal extends Modal {
 
 		// ── Related topics ──
 		this.renderRelated(result);
+	}
+
+	private renderGraph(result: EnrichedResult): void {
+		// Hide list-only sections — they are encoded in the graph
+		this.contradictionsSection.style.display = "none";
+		this.relatedContainer.style.display = "none";
+
+		const data = buildGraphData(result, this.settings.similarityThreshold ?? 0.7);
+
+		if (!this.graph) {
+			this.graph = new ResonanceGraph(this.resultsContainer);
+			this.graph.setCallbacks(
+				(node: GraphNode) => {
+					if (node.result) this.navigateToResult(node.result);
+				},
+				(node: GraphNode) => {
+					if (node.related) {
+						this.inputEl.value = node.related.summary || node.related.source_id;
+						this.onInputChange();
+					}
+				},
+			);
+		}
+
+		this.graph.render(data);
+	}
+
+	private setViewMode(mode: "list" | "graph"): void {
+		this.viewMode = mode;
+		this.updateToggleButtons();
+		this.graph?.destroy();
+		this.graph = null;
+		if (this.lastResult) {
+			this.renderResults(this.lastResult);
+		}
+	}
+
+	private updateToggleButtons(): void {
+		if (this.viewMode === "list") {
+			this.listBtn.addClass("rl-toggle-active");
+			this.graphBtn.removeClass("rl-toggle-active");
+		} else {
+			this.listBtn.removeClass("rl-toggle-active");
+			this.graphBtn.addClass("rl-toggle-active");
+		}
 	}
 
 	// ── Coverage: overall confidence + per-band energy bars ──────────
@@ -339,8 +414,23 @@ export class SearchModal extends Modal {
 		const filePath = result.source_file;
 		if (!filePath) return;
 
-		// Normalize to vault-relative
-		const vaultPath = filePath.replace(/^\.\//, "").replace(/^\//, "");
+		// Normalize to vault-relative path
+		const vaultBasePath = ((this.app.vault.adapter as any).getBasePath?.() || "") as string;
+		let vaultPath = filePath;
+
+		// Strip absolute vault base path prefix (handles both / and \ separators)
+		if (vaultBasePath) {
+			const normalBase = vaultBasePath.replace(/\\/g, "/").replace(/\/$/, "");
+			const normalFile = vaultPath.replace(/\\/g, "/");
+			if (normalFile.startsWith(normalBase + "/")) {
+				vaultPath = normalFile.slice(normalBase.length + 1);
+			} else if (normalFile.toLowerCase().startsWith(normalBase.toLowerCase() + "/")) {
+				vaultPath = normalFile.slice(normalBase.length + 1);
+			}
+		}
+
+		// Clean leading ./ or /
+		vaultPath = vaultPath.replace(/^\.\//, "").replace(/^\//, "");
 
 		// Try exact path first, then with .md extension
 		let file = this.app.vault.getAbstractFileByPath(vaultPath);

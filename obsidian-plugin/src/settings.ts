@@ -3,6 +3,8 @@ import type ResonanceLatticePlugin from "./main";
 
 export interface ResonanceLatticeSettings {
 	rlatPath: string;
+	cartridgeMode: "vault" | "external";
+	externalCartridgePath: string;
 	port: number;
 	topK: number;
 	enableCascade: boolean;
@@ -12,10 +14,14 @@ export interface ResonanceLatticeSettings {
 	autoSync: boolean;
 	encoder: string;
 	checkpoint: string;
+	defaultGraphView: boolean;
+	similarityThreshold: number;
 }
 
 export const DEFAULT_SETTINGS: ResonanceLatticeSettings = {
 	rlatPath: "rlat",
+	cartridgeMode: "vault",
+	externalCartridgePath: "",
 	port: 27182,
 	topK: 10,
 	enableCascade: true,
@@ -25,6 +31,8 @@ export const DEFAULT_SETTINGS: ResonanceLatticeSettings = {
 	autoSync: false,
 	encoder: "intfloat/e5-large-v2",
 	checkpoint: "",
+	defaultGraphView: false,
+	similarityThreshold: 0.7,
 };
 
 export class ResonanceLatticeSettingTab extends PluginSettingTab {
@@ -50,6 +58,36 @@ export class ResonanceLatticeSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					}),
 			);
+
+		new Setting(containerEl)
+			.setName("Cartridge source")
+			.setDesc("Build a cartridge from this vault, or use an existing .rlat file.")
+			.addDropdown((dropdown) =>
+				dropdown
+					.addOption("vault", "Build from vault")
+					.addOption("external", "Use existing .rlat file")
+					.setValue(this.plugin.settings.cartridgeMode)
+					.onChange(async (value) => {
+						this.plugin.settings.cartridgeMode = value as "vault" | "external";
+						await this.plugin.saveSettings();
+						this.display();
+					}),
+			);
+
+		if (this.plugin.settings.cartridgeMode === "external") {
+			new Setting(containerEl)
+				.setName("Cartridge file path")
+				.setDesc("Absolute path to your .rlat cartridge file.")
+				.addText((text) =>
+					text
+						.setPlaceholder("/path/to/my-data.rlat")
+						.setValue(this.plugin.settings.externalCartridgePath)
+						.onChange(async (value) => {
+							this.plugin.settings.externalCartridgePath = value.trim();
+							await this.plugin.saveSettings();
+						}),
+				);
+		}
 
 		new Setting(containerEl)
 			.setName("Server port")
@@ -136,6 +174,32 @@ export class ResonanceLatticeSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
+			.setName("Default to graph view")
+			.setDesc("Open search results in graph view instead of list view.")
+			.addToggle((toggle) =>
+				toggle.setValue(this.plugin.settings.defaultGraphView).onChange(async (value) => {
+					this.plugin.settings.defaultGraphView = value;
+					await this.plugin.saveSettings();
+				}),
+			);
+
+		new Setting(containerEl)
+			.setName("Graph similarity threshold")
+			.setDesc("Minimum band-score cosine similarity to draw edges between results (0.0\u20131.0).")
+			.addText((text) =>
+				text
+					.setPlaceholder("0.7")
+					.setValue(String(this.plugin.settings.similarityThreshold))
+					.onChange(async (value) => {
+						const t = parseFloat(value);
+						if (!isNaN(t) && t >= 0 && t <= 1) {
+							this.plugin.settings.similarityThreshold = t;
+							await this.plugin.saveSettings();
+						}
+					}),
+			);
+
+		new Setting(containerEl)
 			.setName("Encoder")
 			.setDesc("Sentence-transformer model for encoding. Default: intfloat/e5-large-v2.")
 			.addText((text) =>
@@ -161,16 +225,18 @@ export class ResonanceLatticeSettingTab extends PluginSettingTab {
 					}),
 			);
 
-		new Setting(containerEl)
-			.setName("Auto-sync on file changes")
-			.setDesc(
-				"Incrementally sync the cartridge when vault files change (add new, update changed, remove deleted). Uses rlat sync.",
-			)
-			.addToggle((toggle) =>
-				toggle.setValue(this.plugin.settings.autoSync).onChange(async (value) => {
-					this.plugin.settings.autoSync = value;
-					await this.plugin.saveSettings();
-				}),
-			);
+		if (this.plugin.settings.cartridgeMode === "vault") {
+			new Setting(containerEl)
+				.setName("Auto-sync on file changes")
+				.setDesc(
+					"Incrementally sync the cartridge when vault files change (add new, update changed, remove deleted). Uses rlat sync.",
+				)
+				.addToggle((toggle) =>
+					toggle.setValue(this.plugin.settings.autoSync).onChange(async (value) => {
+						this.plugin.settings.autoSync = value;
+						await this.plugin.saveSettings();
+					}),
+				);
+		}
 	}
 }

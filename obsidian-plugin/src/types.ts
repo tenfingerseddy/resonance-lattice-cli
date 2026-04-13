@@ -72,3 +72,37 @@ export interface RemoveResult {
 	removed: boolean;
 	source_count: number;
 }
+
+export interface BandHealth {
+	name: string;
+	band: number;
+	label: string; // "rich" | "adequate" | "thin" | "noisy"
+	effective_rank: number;
+	entropy: number;
+	spectral_gap: number;
+	snr: number;
+	condition: number;
+}
+
+export interface XRayResult {
+	source_count: number;
+	bands: number;
+	dim: number;
+	snr: number;
+	saturation: number;
+	band_health: BandHealth[];
+	diagnostics: string[];
+}
+
+export interface QueryLocation {
+	query: string;
+	band_energies: Record<string, number>;
+	band_focus: string;
+	band_focus_pct: number;
+	anti_resonance_ratio: number;
+	coverage: string;
+	mahalanobis: number;
+	uncertainty_per_band: number[];
+	fisher_per_band: number[];
+	expansion_hint: string | null;
+}
