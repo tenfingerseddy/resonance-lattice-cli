@@ -166,6 +166,13 @@ kaggle/*-dataset-v*/
 # snap-research/locomo). 2.8MB, not worth tracking.
 benchmarks/data/locomo/
 
+# LoCoMo bench transient results (ignore *.json by default, allow
+# only the durable headline result files explicitly).
+benchmarks/results/locomo/*
+!benchmarks/results/locomo/phase2_cartridge_e5_all10.json
+!benchmarks/results/locomo/phase1_smoke_conv1_v3.json
+!benchmarks/results/locomo/phase2_5_cartridge_e5_cascade_all10.json
+
 # Benchmark working dirs (regenerable via benchmarks/extract_beir.py + rlat build)
 /benchmark_data/
 /bench_out/

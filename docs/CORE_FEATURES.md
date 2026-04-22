@@ -85,13 +85,13 @@ The two-primer split with cross-primer deduplication addresses the most common f
   knowledge models:
     - .rlat/fabric-docs.rlat
     - .rlat/engineering-practices.rlat
-  cartridge-queries:
+  knowledge model-queries:
     - "Fabric workspace authentication and service principal patterns"
     - "Medallion architecture naming conventions bronze silver gold"
-  cartridge-mode: augment
-  cartridge-budget: 2000
-  cartridge-derive: true
-  cartridge-derive-count: 3
+  knowledge model-mode: augment
+  knowledge model-budget: 2000
+  knowledge model-derive: true
+  knowledge model-derive-count: 3
   ---
   ```
 
@@ -242,7 +242,7 @@ Every diagnostic metric is derived from the field tensor itself — eigenvalues,
 
 The full hybrid pipeline (dense + lexical + reranking) achieves **Recall@5 of 1.00** and **MRR of 0.93** with **0% failed retrieval** on a 24,635-chunk technical documentation benchmark. Context output is **24.6x more token-efficient** than a grep-plus-read workflow (1,518 tokens vs 37,154 for equivalent coverage), while delivering ranked passages with source attribution instead of raw file text.
 
-On standard BEIR datasets, the production pipeline outperforms flat E5 on 3 of 5 tested corpora, with strongest gains on technical and financial question-answering tasks.
+On the 2026-04-22 5-BEIR rebench, the production default encoder (`BAAI/bge-large-en-v1.5`, flipped from E5 on 2026-04-20) wins 4 of 5 corpora vs flat E5, with strongest gains on technical and financial question-answering. The frontier-tier `qwen3-8b` reaches a 5-BEIR average of **0.500** (vs BGE 0.445 provisional, E5 0.455) when 16 GB of GPU headroom is available. See [Encoder Choice](/docs/encoder-choice) for the per-workload guide.
 
 ---
 
@@ -259,3 +259,7 @@ The gap is not incremental. It is the difference between an assistant that guess
 ---
 
 These seven are the launch use cases — the highest-value workflows we ship in v1.0. What's planned next lives on the [public roadmap](https://github.com/users/tenfingerseddy/projects/1).
+
+---
+
+**Version:** 0.11.0 Beta · v1.0.0 target: 2026-06-08

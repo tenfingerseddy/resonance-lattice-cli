@@ -21,8 +21,8 @@ For related documentation see [RQL_REFERENCE.md](RQL_REFERENCE.md) (programmable
 9. [Common Workflows](#common-workflows)
 10. [Environment Variables](#environment-variables)
 11. [Command Reference](#command-reference)
-    - [Primary](#primary-commands): search, profile, compare, ls, info
-    - [Build](#build-commands): build, add, sync, init, ingest, init-project, setup
+    - [Primary](#primary-commands): search, ask, profile, compare, ls, info
+    - [Build](#build-commands): build, add, sync, refresh, freshness, repoint, init, ingest, init-project, setup
     - [Serve and Context](#serve-and-context-commands): serve, summary, mcp
     - [Query and Analysis](#query-and-analysis-commands): query, resonate, ask, compose, contradictions, topology, xray, locate, probe
     - [Algebra](#algebra-commands): merge, forget, diff
@@ -116,13 +116,13 @@ Knowledge Models are portable by default. For a fully self-contained artifact (c
 
 - **Field**: The latent semantic model. A multi-band interference tensor where each band captures a different abstraction level. Fixed-size regardless of source count.
 - **Registry**: Maps resonance hits back to source coordinates. Stores phase vectors and LSH buckets for fast lookup.
-- **Store**: Holds the actual evidence text and file metadata. Backed by SQLite when embedded in the knowledge model.
+- **Store**: The lossless store — reads raw source files and returns passages + metadata. Ships in three serving topologies: `local` (default; files on disk, resolved at query time), `bundled` (self-contained; files packed inside the `.rlat` as zstd frames), and `remote` (SHA-pinned upstream GitHub repo with local cache). Legacy `embedded` mode (pre-chunked SQLite) is deprecated and will be removed in v2.0.0.
 
 ### Encoder
 
 The encoder converts text into phase vectors that the field can store and query. Three encoders are well-supported and measured on BEIR-5:
 
-- **`bge-large-en-v1.5`** — starting-point default; 335M params; CPU / Intel Arc iGPU friendly; best ecosystem.
+- **`bge-large-en-v1.5`** — CLI default since 2026-04-20 (commit `3e0642f`). 335M params; CPU / Intel Arc iGPU friendly; best ecosystem; wins 4/5 corpora on the 2026-04-22 5-BEIR rebench.
 - **`e5-large-v2`** — 335M params, opt-in; wins on counter-argument / debate retrieval (ArguAna-class corpora).
 - **`qwen3-8b`** — 8B params, opt-in; frontier quality on dense-only (0.500 BEIR-5 avg vs 0.445 BGE); needs a 16 GB GPU.
 
@@ -809,6 +809,7 @@ rlat build <inputs...> -o <output> [options]
 | `--encoder` | str | None | Encoder choice (`e5-large-v2`, `random`) |
 | `--quantize-registry` | int | 0 | Quantize registry phases (0=off, 8=~50% compression, 4=~87% compression) |
 | `--store-mode` | choice | local | One of `bundled`, `local` (= `external`), `remote`, `embedded` (deprecated). See [STORAGE_MODES.md](STORAGE_MODES.md) |
+| `--path` | str | None | Remote builds only: scope to a subdirectory of the repo (e.g. `--path Doc` for CPython docs). Persisted into `__remote_origin__` so `rlat freshness` and `rlat sync` also respect it. Ignored for local builds — pass specific paths as inputs instead |
 | `--progress` | flag | off | Show JSON progress events on stderr |
 | `--onnx` | str | None | ONNX backbone directory for faster encoding |
 | `--input-format` | choice | (auto) | Force input format: `conversation` for chat logs |
@@ -833,6 +834,12 @@ rlat build https://github.com/MicrosoftDocs/fabric-docs -o fabric-docs.rlat
 # Remote build pinned to a specific branch, tag, or commit
 rlat build https://github.com/MicrosoftDocs/fabric-docs#release-branch -o fabric-docs.rlat
 rlat build https://github.com/MicrosoftDocs/fabric-docs@abc1234 -o fabric-docs.rlat
+
+# Remote build scoped to a subdirectory (essential for monorepos)
+#   --path scope is persisted into __remote_origin__ — freshness and
+#   sync only track drift under that prefix
+rlat build https://github.com/python/cpython --path Doc -o python-stdlib.rlat
+rlat build https://github.com/pytorch/pytorch --path docs/source -o pytorch-docs.rlat
 ```
 
 ---
@@ -931,6 +938,54 @@ rlat freshness fabric-docs.rlat
 ```
 
 Raises if the knowledge model isn't remote-mode. Use `rlat refresh` for local-mode drift detection.
+
+---
+
+#### `rlat refresh`
+
+Re-index drifted files in a local-mode knowledge model. Preserves the field tensor where chunk hashes still match — only drifted / missing / newly-added chunks trigger forget+superpose cycles. Unchanged chunks stay byte-identical in the field, so `refresh` is the fast incremental update path for a working-copy knowledge model.
+
+```
+rlat refresh <lattice> --source-root <dir> [options]
+```
+
+**Options:**
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `lattice` | path | **required** | Path to the `.rlat` file to refresh |
+| `--source-root` | path | **required** | Directory manifest paths resolve under. The manifest's `__source_root_hint__` is advisory; pass the current root explicitly. |
+| `--output, -o` | path | overwrite input | Where to write the refreshed knowledge model. Defaults to overwriting in place. |
+| `--encoder` | str | stored | Encoder preset or HuggingFace model ID. Defaults to the one embedded in the knowledge model at build time (guarantees build/query parity). |
+| `--onnx` | path | — | ONNX backbone directory. |
+| `--openvino` | path | — | OpenVINO IR directory. |
+| `--openvino-device` | choice | — | OpenVINO target: `CPU`, `GPU`, `NPU`, `AUTO`. |
+| `--openvino-static-seq-len` | int | — | Fixed sequence length for OpenVINO NPU. |
+
+**What it does (the refresh algorithm):**
+
+1. Load the knowledge model with `--source-root` so a `LocalStore` is attached.
+2. Group manifest entries by `source_file`.
+3. For each file:
+   - **Missing on disk** → forget every chunk bound to that file (file was deleted).
+   - **Exists** → re-chunk and compare `content_hash` per chunk:
+     - **Match** → skip (field preserved byte-identical).
+     - **Mismatch** → `update(old_sid, new_phase)` — atomic forget+superpose that keeps the `source_id` stable so downstream references survive.
+     - **New chunk** (file grew) → superpose with a predictable `source_id` derived from the file's existing id prefix.
+     - **Stale chunk** (file shrunk) → remove.
+4. Save the knowledge model back in local mode with the updated manifest.
+
+**Example:**
+
+```bash
+# Detect drift and re-index in place
+rlat refresh project.rlat --source-root .
+
+# Write refreshed copy alongside the original
+rlat refresh project.rlat --source-root . -o project-refreshed.rlat
+```
+
+Use `rlat refresh` for local-mode drift handling, `rlat freshness` + `rlat sync` for remote-mode drift handling, and `rlat sync` for add-and-remove reconciliation in local mode. `refresh` is the fast path when files mutated in place but the set of files didn't change.
 
 ---
 

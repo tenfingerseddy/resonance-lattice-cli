@@ -13,7 +13,9 @@ aliases:
 
 Resonance Lattice is portable semantic knowledge infrastructure for AI assistants and developer tools. It turns documentation, code, notes, and other file collections into `.rlat` knowledge models that can be searched, profiled, compared, composed, and injected into assistant workflows.
 
-The core unit is the knowledge model. A knowledge model packages a semantic field, a source registry, and an evidence store into one local artifact. That makes the knowledge layer portable instead of tying it to a hosted retrieval service, a database deployment, or a single model stack.
+At the core it is a **three-layer semantic router**: the field routes queries to the handful of chunks most likely to be relevant, a lossless store resolves those chunks from the actual source file, and any LLM you like synthesizes the final answer from the served passages. The field is a fast index over topic and entity structure — it is not an embedding store, and your raw corpus remains the source of truth.
+
+The core unit is the knowledge model. A knowledge model packages a semantic field, a source registry, and the lossless store into one local artifact. That makes the knowledge layer portable instead of tying it to a hosted retrieval service, a database deployment, or a single model stack.
 
 The simplest useful mental model is:
 
@@ -102,6 +104,8 @@ You can combine multiple knowledge models at query time, suppress topics, apply 
 
 The same knowledge layer can be used from the CLI, MCP, HTTP, and the Obsidian plugin today. That makes the knowledge model a shared substrate instead of a one-off integration, and it leaves room for future surfaces without changing the underlying knowledge model.
 
+A dual-primer system (`rlat summary` for the code primer + `rlat memory primer` for the memory primer) generates two complementary context documents — what the project *is* and how the work has *unfolded* — with cross-primer deduplication so the assistant never pays for the same fact twice. `rlat ask` auto-selects the best retrieval lens for a given question, so you do not have to choose between `search`, `locate`, `profile`, and `compose` by hand.
+
 ## Why It Is Worth Setting Up Even If You Already Have Other Tools
 
 One of the right first questions is whether this solves a real problem you still have after putting time into an Obsidian wiki, a skill system, `CLAUDE.md`, or assistant memory. In many teams, the answer is yes because those tools are valuable but they do not replace a portable, inspectable retrieval layer.
@@ -169,7 +173,7 @@ The positioning above only matters if the system performs well enough to justify
 - on the internal Fabric retrieval benchmark, the full pipeline reaches `Recall@5 = 1.00`, `MRR = 0.93`, and `0%` failed retrieval
 - on token-efficiency testing, `rlat search` returned `24.6x` fewer tokens than a grep-plus-read workflow while preserving ranked passages and source attribution
 - in the current grounding evaluation, adding RL context reduced hallucination rate from `0.78` to `0.16` and lifted fact recall from `0.27` to `0.91`
-- on the published BEIR runs, the production pipeline outperformed flat E5 on `3 of 5` tested datasets and came close on SciFact
+- on the 2026-04-22 5-BEIR rebench, the default encoder (`BAAI/bge-large-en-v1.5`, flipped from E5 on 2026-04-20) wins `4 of 5` corpora versus flat E5; the frontier-tier `qwen3-8b` option reaches a 5-BEIR average of `0.500` (vs BGE `0.445` provisional, E5 `0.455`)
 
 These results do not prove that RL wins every corpus or every retrieval benchmark. They do show that the knowledge-model-plus-pipeline story is strong enough to matter in real assistant workflows, including workflows that already have skills, memory, or an Obsidian-style knowledge layer. For the full evidence page, see [Benchmarks](/docs/benchmarks).
 
@@ -179,3 +183,7 @@ These results do not prove that RL wins every corpus or every retrieval benchmar
 - Read [FAQ](/docs/faq) if you want the longer comparison and practical adoption answers.
 - Read [Getting Started](/docs/getting-started) if you want the fastest path to first success.
 - Read [CLI](/docs/cli), [MCP](/docs/mcp), or [Context Control](/docs/context-control) if you already know the product shape and want the operational details.
+
+---
+
+**Version:** 0.11.0 Beta · v1.0.0 target: 2026-06-08

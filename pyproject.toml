@@ -85,7 +85,7 @@ all = ["resonance-lattice[stream,train,bench,fast,code,wizard,dev]"]
 rlat = "resonance_lattice.cli:main"
 
 [project.urls]
-Repository = "https://github.com/tenfingerseddy/Resonance-Lattice"
+Repository = "https://github.com/tenfingerseddy/resonance-lattice"
 
 [tool.setuptools.packages.find]
 where = ["src"]

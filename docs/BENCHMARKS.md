@@ -146,7 +146,17 @@ These runs test whether the production pipeline generalizes beyond the internal 
 
 ### Headline numbers
 
-Current published BEIR results use the production encoder path (`E5-large-v2`, no trained heads checkpoint):
+We ship three encoder tiers — each measured against the same 5-BEIR harness. None wins every corpus; the honest answer is workload-dependent. See [Encoder Choice](/docs/encoder-choice) for the per-workload decision guide.
+
+**5-BEIR averages (nDCG@10, 2026-04-22 rebench):**
+
+| Encoder | Tier | 5-BEIR avg | Notes |
+|---------|------|-----------|-------|
+| **`qwen3-8b`** | Frontier (16 GB GPU) | **0.500** | Block E final; roughly 1 pt below `text-embedding-3-large`. Launch gate (≥0.46) passes on this tier. |
+| **`e5-large-v2`** | Portable alternative | 0.455 | Strongest on counter-argument retrieval (ArguAna-like). |
+| **`bge-large-en-v1.5`** | Portable default (since 2026-04-20) | **0.445** (provisional, Block D) | Wins SciFact, NFCorpus, FiQA, SciDocs vs E5; loses ArguAna by ~9.7 pts. Net −1.0 pt vs E5 on the 5-corpus average; below the 0.46 gate. |
+
+**Per-corpus breakdown** (historic `E5-large-v2` run with the production pipeline, reranker-on where applicable):
 
 | BEIR dataset | rlat (best) | Mode | Flat E5 | BM25 |
 |---|---|---|---|---|
@@ -158,12 +168,15 @@ Current published BEIR results use the production encoder path (`E5-large-v2`, n
 
 ### Strongest valid takeaway
 
-The production pipeline outperforms flat E5 on 3 of 5 tested datasets, and the best mode differs by corpus. That supports the idea that RL is a real retrieval workflow with cross-corpus value, not just an internal demo.
+The production pipeline exceeds flat E5 on 3 of 5 BEIR corpora under the historic E5-large-v2 run, and on the 2026-04-22 rebench the default `bge-large-en-v1.5` wins 4 of 5 corpora outright versus E5 (losing only ArguAna). Because `bge-large-en-v1.5` is ~1 pt below the 0.46 launch gate on the 5-BEIR average — driven entirely by the ArguAna regression — the v1.0.0 product position is **publish full per-encoder numbers and recommend `qwen3-8b` for users who need the extra headroom**, rather than gate-failing the default. See [Honest Claims](/docs/honest-claims#measurement-state) for the full Block D/E story.
 
 ### Limits and caveats
 
-- RL does not win every dataset
+- the pipeline does not win every dataset under every encoder
 - reranking helps on factual and technical corpora, but dense-only can be stronger on argument-style retrieval
+- BGE's 0.445 is provisional (Block D) pending the final rebench; E5 (0.455) and Qwen3-8B (0.500) are finalized
+- the `qwen3-8b` result uses last-token pooling (required for Qwen3-Embedding); a broken mean-pool run previously collapsed to 0.250 on the same harness — the Qwen3 preset pins the correct pooling automatically
+- LongMemEval (below) was measured with `E5-large-v2` and auto-routed retrieval; a BGE / Qwen3-8B rerun is tracked work
 - corpus fit matters more than any single leaderboard headline
 
 ### Raw outputs

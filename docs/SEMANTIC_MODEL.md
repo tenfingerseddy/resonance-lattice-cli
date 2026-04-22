@@ -24,9 +24,15 @@ The semantic model is what makes the product more than a search wrapper. It give
 
 ## How Does It Work?
 
+Resonance Lattice is a **three-layer semantic router** (the 2026-04-19 pivot):
+
+1. **Field routes** — a fixed-size latent tensor encodes topic and entity structure. Given a query, the field returns the handful of chunks most likely to be relevant. The field does **not** embed document content; it is a router, not an embedding store.
+2. **Lossless store serves** — those chunks are resolved through a lossless store that reads the actual source file. The store is authoritative; the field is a fast router over it.
+3. **Reader synthesizes** — an LLM composes the final answer from the served passages, if you want synthesis. The router works fine without one.
+
 ### Retrieval Path
 
-At query time the question is encoded into the same space as the knowledge model. The field produces resonance signals, the registry identifies the strongest sources, and the store returns passages and metadata.
+At query time the question is encoded into the same space as the knowledge model. The field resonates against the query and routes it to candidate chunks; the registry resolves those hits to source coordinates; the lossless store returns the actual passages and metadata from the raw source file. Quality comes from the full pipeline (lexical injection + reranking where applicable), not from the field in isolation — the field alone under-performs flat cosine; the win is in the router-plus-store-plus-reranker stack.
 
 ### Enriched Search
 
@@ -62,4 +68,8 @@ Use `search` when you want the full enriched retrieval path. Use `query` or `res
 
 ### Mental Model
 
-Treat the field as a structured semantic model and the store as the source of truth. Retrieval quality depends on both the encoder contract and the query pipeline, not on the field in isolation.
+Treat the field as a **router**, not an embedding store. The raw corpus is the source of truth; the lossless store serves bytes from it. The field is a fast index over topic and entity structure that tells the store which chunks to pull — it is small, disposable, and can be re-derived from the raw corpus by re-encoding. Retrieval quality depends on the encoder contract and the query pipeline (routing + lexical injection + reranking), not on the field in isolation.
+
+---
+
+**Version:** 0.11.0 Beta · v1.0.0 target: 2026-06-08

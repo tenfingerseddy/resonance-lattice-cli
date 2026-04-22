@@ -17,7 +17,7 @@ Once v1.0.0 ships, this table will be updated to reflect the supported range.
 
 Report privately via one of:
 
-1. **GitHub Security Advisory (preferred):** open a private advisory at <https://github.com/tenfingerseddy/Resonance-Lattice/security/advisories/new>. This keeps the discussion confidential and produces a CVE when appropriate.
+1. **GitHub Security Advisory (preferred):** open a private advisory at <https://github.com/tenfingerseddy/resonance-lattice/security/advisories/new>. This keeps the discussion confidential and produces a CVE when appropriate.
 2. **Email:** kanesnyder1@gmail.com, with subject line prefix `[rlat-security]`.
 
 Please include:

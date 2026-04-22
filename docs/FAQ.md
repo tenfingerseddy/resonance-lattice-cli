@@ -76,15 +76,13 @@ They work best together, not as substitutes for each other.
 
 ### How does it work?
 
-`rlat build` chunks your files, encodes each chunk with a local encoder, and packages everything into a single `.rlat` knowledge model. The knowledge model has three layers:
+Resonance Lattice is a **three-layer semantic router**:
 
-| Layer | What it does |
-|-------|-------------|
-| **Field** | Models semantic structure — what the corpus appears to know |
-| **Registry** | Maps semantic hits back to ranked source files |
-| **Store** | Returns evidence text, passages, and metadata |
+1. **Field routes** — a fixed-size latent tensor (~80 MB) models semantic structure. Given a query, the field returns the handful of chunks most likely to be relevant.
+2. **Lossless store serves** — those chunks are resolved through a lossless store that reads the actual source file. The store is authoritative; the field is a fast router over it.
+3. **Reader synthesizes** — an LLM (Claude, etc.) composes the final answer from the served passages, if you want synthesis. The router works fine without one.
 
-When you query, your question is encoded the same way, resonated against the field, and the registry resolves the top matches back to source text.
+`rlat build` chunks your files, encodes each chunk with a local encoder, and packages everything into a single `.rlat` knowledge model. When you query, your question is encoded the same way, resonated against the field, and the store resolves the top matches back to source text.
 
 After a build, the practical result is one file you can use to:
 
@@ -93,23 +91,30 @@ After a build, the practical result is one file you can use to:
 - compare versions of project knowledge
 - plug grounded retrieval into assistants through CLI, MCP, or HTTP
 
-You choose how the knowledge model is packaged:
+You choose how the knowledge model is packaged. The store comes in three serving topologies — one abstraction, three backends:
 
-| Store mode | What you get | Trade-off |
+| Store mode | What you get | Pick when |
 |-----------|-------------|-----------|
-| **embedded** (default) | One self-contained `.rlat` file with field, registry, and all evidence text | Portable — share, archive, or move it anywhere |
-| **external** | Lightweight `.rlat` with field and registry only; evidence is read from your local source files at query time | Smaller knowledge model, always up-to-date text, but tied to the source directory |
+| **`local`** (default) | Thin `.rlat`; source files live on disk and are resolved via `--source-root` at query time | Developing against a working copy; large corpora where you don't want to bundle source |
+| **`bundled`** | Self-contained `.rlat` with raw source files packed inside (zstd frames) | Shipping a self-contained artifact — HF Hub, CI, offline, a release with provenance |
+| **`remote`** | Thin `.rlat` that points at a public GitHub repo, SHA-pinned with a local cache | Pointing at an upstream repo you don't own; query/load never touches the network |
+
+The historical name **`external`** is still accepted as a synonym for `local`. Legacy **`embedded`** mode (pre-chunked SQLite store) is deprecated and will be removed in v2.0.0 — it is *not* the same as `bundled`: `bundled` stores whole files and preserves every retrieval feature, `embedded` stored pre-chunked text and lost the whole-file view.
 
 ```bash
-# Self-contained (default)
+# Default — thin knowledge model, source files on disk
 rlat build ./docs ./src -o project.rlat
 
-# Lightweight — reads evidence from local files
-rlat build ./docs ./src -o project.rlat --store-mode external
-rlat search project.rlat "auth flow" --source-root .
+# Self-contained artifact
+rlat build ./docs ./src -o project.rlat --store-mode bundled
+
+# Remote — points at an upstream GitHub repo
+rlat build https://github.com/MicrosoftDocs/fabric-docs -o fabric-docs.rlat
+rlat freshness fabric-docs.rlat
+rlat sync fabric-docs.rlat
 ```
 
-For more on the architecture, see [Semantic Model](/docs/semantic-model).
+For more on the three modes — format details, freshness model, when to pick each — see [Storage Modes](/docs/storage-modes).
 
 ### What does normal usage look like?
 
@@ -194,16 +199,19 @@ Available presets cover a range of trade-offs:
 
 | Tier | Preset | Params | Context | Notes |
 |------|--------|--------|---------|-------|
-| **Default** | `e5-large-v2` | 335M | 512 | Proven, fast, no surprises |
+| **Default** | `bge-large-en-v1.5` | 335M | 512 | CLI default (since 2026-04-20); portable, CPU-friendly, strong on docs/science/code |
+| **Alternative** | `e5-large-v2` | 335M | 512 | Opt-in; wins on ArguAna-like counter-argument corpora |
 | **Fast** | `nomic-v2` | 305M active | 8K | MoE efficiency, longer context |
 | **Balanced** | `arctic-embed-2` | 335M | 8K | Strong retrieval per parameter |
-| **Balanced** | `bge-m3` | 568M | 8K | Production workhorse, 1000+ languages |
+| **Balanced** | `bge-m3` | 568M | 8K | Multilingual workhorse, 1000+ languages |
 | **Quality** | `qwen3-0.6b` | 600M | 32K | Best small model, Apache 2.0 |
 | **Quality** | `nemotron-1b` | 1B | 8K | Strong open-weight, NVIDIA backed |
 | **Quality** | `qwen3-4b` | 4B | 32K | Serious quality jump |
-| **Max** | `qwen3-8b` | 8B | 32K | Top of MTEB multilingual |
+| **Max** | `qwen3-8b` | 8B | 32K | Frontier quality (BEIR-5 avg 0.500), needs ~16 GB GPU |
 
 You can also pass any raw HuggingFace model ID to `--encoder` for unlisted models.
+
+Three encoders are well-supported and benchmarked — BGE-large-en-v1.5 (default, portable), E5-large-v2 (opt-in, strongest on counter-argument retrieval), and Qwen3-Embedding-8B (opt-in, frontier quality at 16 GB GPU). See [Encoder Choice](/docs/encoder-choice) for the per-workload decision guide. All three use pretrained weights with random projection heads — trained heads were tested and rejected because they broke build/query parity.
 
 The practical mindset is not "pick the perfect model forever." It is:
 
@@ -213,19 +221,25 @@ The practical mindset is not "pick the perfect model forever." It is:
 
 ### What is the current recommended encoder setup?
 
-The default encoder is `intfloat/e5-large-v2`. That is the safe starting point — it is local, fast, well-tested, and runs on ordinary hardware.
+The default encoder is `BAAI/bge-large-en-v1.5` (flipped from E5-large-v2 as the CLI default on 2026-04-20). That is the safe starting point — it is local, fast, well-tested, and runs on ordinary hardware.
 
-If you want stronger retrieval quality or multilingual support, switch to a larger preset:
+Three encoders are well-supported and have measured BEIR coverage:
+
+- **BGE-large-en-v1.5** (default) — best general choice across docs, science, and code
+- **E5-large-v2** — opt-in, strongest on counter-argument corpora (ArguAna-like)
+- **Qwen3-Embedding-8B** — opt-in, frontier quality, needs ~16 GB GPU
+
+Switch explicitly when you have a reason to:
 
 ```bash
-# Multilingual, longer context, stronger quality
-rlat build ./docs -o project.rlat --encoder qwen3-0.6b
+# Frontier quality, 16 GB GPU required
+rlat build ./docs -o project.rlat --encoder qwen3-8b
 
-# Production workhorse, 1000+ languages
+# Multilingual workhorse, 1000+ languages
 rlat build ./docs -o project.rlat --encoder bge-m3
 ```
 
-Run `rlat encoders` to see all available presets and their trade-offs.
+Run `rlat encoders` to see all available presets. See [Encoder Choice](/docs/encoder-choice) for the full decision guide.
 
 ### What do I use this for?
 
@@ -460,7 +474,7 @@ Short version:
 - Resonance Lattice is the stronger retrieval layer for grounded assistant use
 - Obsidian can still be a good workspace, but the benchmark case here is that RL beats the Obsidian LLM wiki approach on retrieval quality
 
-If you like Obsidian as the interface, use the [Obsidian plugin](https://github.com/tenfingerseddy/Resonance-Lattice/tree/main/obsidian-plugin) and let RL provide the retrieval layer underneath.
+If you like Obsidian as the interface, use the [Obsidian plugin](https://github.com/tenfingerseddy/resonance-lattice/tree/main/obsidian-plugin) and let RL provide the retrieval layer underneath.
 
 ### How much of the quality comes from the backbone versus the pipeline?
 
@@ -508,9 +522,17 @@ That is important because it shows where the quality actually comes from. The ma
 
 ### What should I make of the BEIR / cross-corpus results?
 
-The pipeline outperforms flat E5 cosine similarity on 3 of 5 BEIR datasets and comes within 97% on SciFact — on corpora the system has never seen. With auto-mode selection (reranking when it helps, dense-only when it doesn't), the pipeline adapts across corpus types.
+The five-BEIR coverage (SciFact, NFCorpus, FiQA, ArguAna, SciDocs) is how we measure cross-corpus generalisation. None of the three well-supported encoders wins everywhere, and we report all three — that's the honest version.
 
-Current BEIR results (nDCG@10, production encoder E5-large-v2, no trained heads):
+**BEIR-5 best-mode averages (nDCG@10, 2026-04-22 rebench — Qwen3-8B final, BGE figures provisional pending final rebench):**
+
+| Encoder | BEIR-5 avg | Notes |
+|---------|-----------|-------|
+| **Qwen3-Embedding-8B** | **0.500** | Frontier-adjacent; ~1 pt below `text-embedding-3-large`. Needs ~16 GB GPU. |
+| **E5-large-v2** | 0.455 | Strongest on counter-argument retrieval (ArguAna). |
+| **BGE-large-en-v1.5** (default) | 0.445 | Wins 4/5 corpora vs E5; loses ArguAna by ~9.7 pts — net −1.0 pt vs E5 on the 5-corpus average. |
+
+**Per-corpus breakdown** (historic E5-large-v2 run, reranker-on where applicable):
 
 | BEIR Dataset | rlat (best) | Mode | Flat E5 | BM25 |
 |---|---|---|---|---|
@@ -523,11 +545,12 @@ Current BEIR results (nDCG@10, production encoder E5-large-v2, no trained heads)
 The right way to read this:
 
 - do **not** treat it as evidence that Resonance Lattice will win every external benchmark
-- do treat it as evidence that the pipeline exceeds flat E5 on 3 of 5 datasets tested
+- do treat it as evidence that the pipeline exceeds flat E5 on 3 of 5 datasets under E5-large-v2
 - the reranker helps on factual/technical corpora (SciFact, NFCorpus, FiQA) but can hurt on argument-style retrieval (ArguAna, SciDocs) where dense-only is stronger
+- the default encoder (BGE) is the right starting point for docs, science, and code corpora — switch to E5 if your workload is ArguAna-like counter-argument retrieval, or Qwen3-8B if you have a 16 GB GPU and want SOTA quality
 - fit for your own corpus matters more than any single benchmark headline
 
-All published BEIR numbers use the production encoder (E5-large-v2, no trained heads checkpoint).
+All per-corpus numbers in the breakdown table use pretrained encoder weights only — no trained heads, no checkpoints.
 
 ### Where does the LLM grounding number come from?
 
@@ -622,17 +645,24 @@ That matters in assistant workflows because repeated queries inside one coding s
 
 ### What are store modes?
 
-| Mode | What's in the `.rlat` | Trade-off |
-|------|------------------------|-----------|
-| `embedded` (default) | Field + registry + all evidence text | Portable, self-contained |
-| `external` | Field + registry only | Smaller knowledge model; pass `--source-root` at query time |
+The canonical CLI flag is `--store-mode {bundled,local,remote}`:
 
-External mode is useful when you want:
+| Mode | What's in the `.rlat` | Pick when |
+|------|------------------------|-----------|
+| `local` (default) | Field + registry; source files resolved from disk via `--source-root` | Working copy development; large corpora; you don't want to bundle source |
+| `bundled` | Field + registry + raw source files packed inside (zstd frames) | Self-contained artifact — HF Hub, CI, offline, release bundles |
+| `remote` | Field + registry + HTTP pointer to a SHA-pinned upstream GitHub repo + local cache | Pointing at an upstream repo you don't own; SHA-pinned freshness via `rlat freshness` / `rlat sync` |
+
+`external` is the historical name for `local` and is still accepted. `embedded` (legacy pre-chunked SQLite store) is **deprecated** and removed in v2.0.0 — rebuild old `embedded` knowledge models with `--store-mode bundled` or `--store-mode local`. See [Storage Modes](/docs/storage-modes) for the bundled-vs-embedded distinction.
+
+Local mode is useful when you want:
 
 - a smaller knowledge model
 - to avoid embedding source text
 - to keep evidence current at query time from local files
 - to share semantic structure without shipping the evidence store
+
+Bundled mode is the right answer when the knowledge model itself needs to be the distributable — a release artifact, a Hugging Face Hub upload, or a self-contained offline demo. Remote mode is the right answer when the corpus is an upstream repo you don't own: `rlat freshness` and `rlat sync` manage upgrades lockfile-style without ever touching the network at query time.
 
 ### What are the bands?
 
@@ -674,17 +704,17 @@ Changing the encoder is a real semantic change, not just a config toggle. If the
 That is why the workflow should be:
 
 - build with a deliberate encoder choice
-- keep the knowledge model bound to that encoder
+- keep the knowledge model bound to that encoder (the encoder is stamped in the `.rlat`; querying auto-restores the same preset, so you cannot accidentally query a BGE knowledge model with E5)
 - benchmark new encoder choices before adopting them
 
-For most users today, the recommended setup is still the standard production encoder without a trained checkpoint.
+For most users today, the recommended setup is the default BGE-large-en-v1.5 encoder with pretrained weights only — no trained heads, no checkpoints.
 
 ### What are the practical scaling limits today?
 
 The main constraints worth knowing are:
 
 - **initial build cost** — first build is CPU-intensive because files must be chunked and encoded
-- **default local backbone** — `e5-large-v2` is the default; stronger backbones are available via presets (`rlat encoders`)
+- **default local backbone** — `bge-large-en-v1.5` is the default; stronger backbones (Qwen3-8B for frontier quality, bge-m3 for multilingual) are available via presets (`rlat encoders`)
 - **dense-only mode** — faster, but weaker than the full hybrid + reranked pipeline
 - **language support** — the default encoder is strongest in English; multilingual presets like `bge-m3` and `qwen3-8b` are available
 - **very large corpora** — the dense field has practical scaling limits; other backends trade memory and retrieval characteristics differently
@@ -788,20 +818,25 @@ The short advice is:
 
 Two strong approaches:
 
-**Approach 1: Supplemental context file**  
-Best when you want an extra machine-generated context layer for assistants alongside your existing project docs and instructions.
+**Approach 1: Dual primer files**  
+Best when you want a machine-generated context layer for assistants alongside your existing project docs and instructions. Resonance Lattice ships two complementary primers:
+
+- **Code primer** (`rlat summary`) — captures what the project *is*: structure, conventions, patterns
+- **Memory primer** (`rlat memory primer`) — captures how the work has unfolded: settled decisions, reversals, active threads. Reads from `./memory/` (see [LLM Memory](/docs/llm-memory))
 
 ```bash
 rlat summary project.rlat -o .claude/resonance-context.md
+rlat memory primer ./memory/ -o .claude/memory-primer.md
 ```
 
-Then reference it from `CLAUDE.md`:
+Then reference both from `CLAUDE.md`:
 
 ```markdown
 @.claude/resonance-context.md
+@.claude/memory-primer.md
 ```
 
-Use this as a supplement, not a replacement, for a good `README` or `CLAUDE.md`. Human-written project docs are still the primary place for conventions, architecture intent, and onboarding guidance.
+The two primers de-duplicate against each other — topics covered in one are skipped in the other, so you don't pay for the same context twice. Use this as a supplement, not a replacement, for a good `README` or `CLAUDE.md`. Human-written project docs are still the primary place for conventions, architecture intent, and onboarding guidance.
 
 **Approach 2: MCP server**  
 Best when you want live semantic search, profile, and compare inside the conversation.
@@ -821,12 +856,7 @@ Claude Code config location:
 
 - `.mcp.json` in project root
 
-This exposes:
-
-- `rlat_search`
-- `rlat_info`
-- `rlat_profile`
-- `rlat_compare`
+This exposes 19 MCP tools grouped by purpose — search and context (`rlat_search`, `rlat_resonate`, `rlat_compose_search`, `rlat_ask`), info and diagnostics (`rlat_info`, `rlat_profile`, `rlat_compare`, `rlat_locate`, `rlat_xray`, `rlat_health`, `rlat_negotiate`), discovery and freshness (`rlat_discover`, `rlat_freshness`, `rlat_switch`), skill routing (`rlat_skill_route`, `rlat_skill_inject`), and layered memory (`rlat_memory_recall`, `rlat_memory_save`, `rlat_memory_forget`). See [MCP](/docs/mcp#current-tool-surface) for the full table with descriptions.
 
 ### Can I use it with GitHub Copilot, Cursor, or other AI tools?
 
@@ -857,13 +887,15 @@ The primary value remains the knowledge model and query workflow:
 - `resonate` for compact assistant-ready context
 - `profile`, `xray`, `locate`, and `compare` for inspection and analysis
 
-### When should I use `search`, `resonate`, `summary`, `profile`, or `compare`?
+### When should I use `search`, `ask`, `resonate`, `summary`, `profile`, or `compare`?
 
 Use this rule of thumb:
 
-- **`search`** — primary query surface; start here
+- **`search`** — primary query surface; start here when you know you want ranked passages
+- **`ask`** — auto-selects the best retrieval lens (search, locate, profile, compare, compose) from the question's intent; use it when you're not sure which command to run
 - **`resonate`** — compact context for prompt injection
-- **`summary`** — generate a supplemental assistant context file when a static extra layer is useful
+- **`summary`** — generate the *code primer* (a supplemental assistant context file describing what the project *is*)
+- **`memory primer`** — generate the *memory primer* (a supplemental context file describing how the work has unfolded — settled decisions, reversals, active threads). Code primer + memory primer together are the dual-primer system
 - **`profile`** — inspect what the knowledge model appears to know
 - **`compare`** — compare semantic shape across two knowledge models
 - **`xray` / `locate` / `probe`** — diagnostics, positioning, and insight workflows
@@ -901,20 +933,20 @@ The skill author adds a few frontmatter fields to SKILL.md:
 name: my-skill
 knowledge models:
   - .rlat/project-docs.rlat
-cartridge-queries:
+knowledge model-queries:
   - "What are the core design patterns in this project"
-cartridge-mode: augment
-cartridge-budget: 2000
+knowledge model-mode: augment
+knowledge model-budget: 2000
 ---
 ```
 
-Adding `cartridges:` alone enables user-query search. Adding `cartridge-queries:` enables foundational context that loads every trigger. Tier 4 (derived queries) accepts caller-supplied search terms via `--derived` to surface implicit needs. Adoption is incremental — skills without `cartridge-*` fields work exactly as before.
+Adding `knowledge models:` alone enables user-query search. Adding `knowledge model-queries:` enables foundational context that loads every trigger. Tier 4 (derived queries) accepts caller-supplied search terms via `--derived` to surface implicit needs. Adoption is incremental — skills without `knowledge model-*` fields work exactly as before. See [Skill Integration](/docs/skill-integration) for the full schema.
 
 ### How do foundational queries work?
 
 Foundational queries are the skill author's answer to: "what does this skill always need to know, regardless of the user's question?"
 
-They are defined in the `cartridge-queries` frontmatter field. When the skill triggers, these queries resonate against the declared knowledge models and pull ranked passages — the same retrieval pipeline as `rlat search`, but automated and budget-capped (40% of the token budget by default).
+They are defined in the `knowledge model-queries` frontmatter field. When the skill triggers, these queries resonate against the declared knowledge models and pull ranked passages — the same retrieval pipeline as `rlat search`, but automated and budget-capped (40% of the token budget by default).
 
 For example, a notebook-creation skill might always need Fabric API patterns, pyspark conventions, and workspace auth — whether the user asks about CSV ingestion or REST API ingestion. The foundational queries guarantee that baseline context, while the user's actual question (Tier 3, 30%) and any caller-supplied derived queries (Tier 4, 30%) fill the remaining budget with request-specific context.
 
@@ -928,20 +960,20 @@ The practical effect: skill authors guarantee baseline domain knowledge without 
 
 Current status is:
 
-**Alpha (`0.9.0`)**
+**Beta (`0.11.0`)** — targeting **v1.0.0 on 2026-06-08**
 
 That should be read as:
 
 - technically serious
 - benchmarked
 - feature-rich
-- still early enough that docs, evaluation coverage, and ergonomics are actively evolving
+- converging on v1.0.0 — the core CLI and three-layer semantic router are stable; docs, evaluation coverage, and ergonomics are still tightening for launch
 
 ### What are the main limitations today?
 
 The main things to keep in mind are:
 
-- the project is still alpha, so workflows are stable but still being refined
+- the project is in beta, so workflows are stable but still being refined ahead of the v1.0.0 cut
 - the default local encoder is strongest in English; multilingual presets like `bge-m3` and `qwen3-8b` are available via `--encoder`
 - the first build downloads and caches the encoder before fully offline use
 - best-quality retrieval usually comes from the full hybrid + reranked path, though dense-only can outperform reranking on some corpus types (e.g. argument-style retrieval)

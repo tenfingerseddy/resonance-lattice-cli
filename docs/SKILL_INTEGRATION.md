@@ -10,8 +10,8 @@ aliases:
 # Skill Integration: Resonance Lattice as the Semantic Intelligence Layer
 
 > **Status**: All phases shipped (Phase 1-4)
-> **Version**: 0.9.0 (2026-04-13)
-> **Depends on**: RL 0.9.0+, Claude Code skills
+> **Version**: 0.11.0 Beta · v1.0.0 target: 2026-06-08
+> **Depends on**: RL 0.11.0+, Claude Code skills
 
 ---
 
@@ -83,9 +83,9 @@ rlat skill compare skill-a skill-b        # Compare two skills' knowledge models
 
 ### Shipped Capabilities
 
-- Frontmatter parsing for all `cartridge-*` fields
+- Frontmatter parsing for all `knowledge model-*` fields (canonical) and legacy `cartridge-*` aliases for back-compat
 - Skill discovery across `.claude/skills/`
-- Build knowledge model from `references/` or explicit `cartridge-sources`
+- Build knowledge model from `references/` or explicit `knowledge model-sources`
 - Incremental sync (skip unchanged files)
 - Search single or multi-knowledge model skills (auto-compose via `ComposedCartridge`)
 - Primer generation alongside knowledge model build
@@ -142,16 +142,16 @@ When a knowledge-model-backed skill triggers, context loads in four tiers:
 
 Budgets are in **tokens**, not lines. This matches the existing RL convention
 (`MaterialiserConfig.token_budget`, `projector.py` char/token limits).
-The `cartridge-budget` frontmatter field is in tokens (default 2000).
+The `knowledge model-budget` frontmatter field is in tokens (default 2000).
 Internally, `_estimate_tokens()` and `_truncate_to_tokens()` from the
 materialiser handle enforcement.
 
 | Tier | Allocation | Default tokens |
 |------|-----------|----------------|
 | Tier 1 (static header) | Fixed | ~500 (SKILL.md body, outside budget) |
-| Tier 2 (foundational) | 40% of `cartridge-budget` | ~800 |
-| Tier 3 (user query) | 30% of `cartridge-budget` | ~600 |
-| Tier 4 (derived) | 30% of `cartridge-budget` | ~600 |
+| Tier 2 (foundational) | 40% of `knowledge model-budget` | ~800 |
+| Tier 3 (user query) | 30% of `knowledge model-budget` | ~600 |
+| Tier 4 (derived) | 30% of `knowledge model-budget` | ~600 |
 
 If Tier 4 is disabled, its allocation shifts to Tier 3 (40/60 split).
 
@@ -230,7 +230,7 @@ This means:
 
 | Constraint | Value | Rationale |
 |------------|-------|-----------|
-| Max queries | 2-3 (configurable via `cartridge-derive-count`) | More queries = diminishing returns |
+| Max queries | 2-3 (configurable via `knowledge model-derive-count`) | More queries = diminishing returns |
 | Query length | Under 15 words | Short, specific queries produce better resonance |
 | Dedup | By source_id against Tiers 2/3 | Prevents redundant passages |
 | Fallback | If no derived queries supplied, Tier 4 is empty | Budget shifts to Tier 3 |
@@ -251,10 +251,10 @@ already knows the answer. This logic must be **mode-aware** for skill injection:
 
 Implementation note: `projector.py` already has both `GatedProjector` (broad context)
 and `GroundingProjector` (citation-only). The `SkillProjector` should select between
-them based on `cartridge-mode`:
+them based on `knowledge model-mode`:
 
 ```python
-if skill.cartridge_mode == "constrain":
+if skill.cartridge_mode == "constrain":  # dataclass attr; YAML key is "knowledge model-mode"
     # Always inject -- use GroundingProjector, no gating
     projector = GroundingProjector(top_k=budget_sources)
 elif skill.cartridge_mode == "knowledge":
@@ -264,6 +264,8 @@ else:  # augment
     # Full gate
     projector = GatedProjector(base, passage_phases, gate_threshold=0.3)
 ```
+
+Note on terminology: the `SkillConfig` dataclass still uses `cartridge_*` snake_case attribute names (`cartridge_mode`, `cartridge_budget`, `cartridge_queries`, ...). These are internal implementation names and will persist for back-compat. The YAML frontmatter keys are the user-facing contract and use the canonical `knowledge model-*` form.
 
 ---
 
@@ -346,35 +348,37 @@ name: fabric-notebook-ingest
 description: Create Fabric notebooks for data ingestion...
 
 # Knowledge Model integration (all optional, all new)
-knowledge models:                                    # which rlats this skill draws from
+knowledge models:                              # which rlats this skill draws from
   - fabric-docs.rlat                           # relative to project root or absolute
   - pyspark-docs.rlat
-cartridge-queries:                             # foundational queries -- Tier 2
+knowledge model-queries:                       # foundational queries -- Tier 2
   - "How do you create a notebook in Fabric through the API"
   - "What are pyspark best practices for data ingestion"
   - "Fabric workspace authentication and authorization patterns"
-cartridge-sources:                             # dirs to build a skill-local knowledge model from
+knowledge model-sources:                       # dirs to build a skill-local knowledge model from
   - references/
-cartridge-mode: augment                        # injection mode: augment | constrain | knowledge
-cartridge-budget: 2000                         # max dynamic injection tokens (Tier 2+3+4)
-cartridge-rebuild: on-change                   # rebuild policy: none | on-change | daily
-cartridge-derive: true                         # enable Tier 4 derived queries
-cartridge-derive-count: 3                      # max derived queries
+knowledge model-mode: augment                  # injection mode: augment | constrain | knowledge
+knowledge model-budget: 2000                   # max dynamic injection tokens (Tier 2+3+4)
+knowledge model-rebuild: on-change             # rebuild policy: none | on-change | daily
+knowledge model-derive: true                   # enable Tier 4 derived queries
+knowledge model-derive-count: 3                # max derived queries
 ---
 ```
 
 ### Field Reference
 
-| Field | Type | Default | Description |
+| Field (YAML key) | Type | Default | Description |
 |-------|------|---------|-------------|
-| `cartridges` | list[str] | `[]` | Paths to .rlat files this skill queries |
-| `cartridge-queries` | list[str] | `[]` | Foundational queries (Tier 2), run every trigger |
-| `cartridge-sources` | list[str] | `["references/"]` | Dirs to build skill-local knowledge model from |
-| `cartridge-mode` | str | `"augment"` | Injection mode: augment, constrain, knowledge |
-| `cartridge-budget` | int | `2000` | Max tokens for dynamic injection (Tiers 2+3+4) |
-| `cartridge-rebuild` | str | `"none"` | Rebuild policy: none, on-change, daily |
-| `cartridge-derive` | bool | `true` | Enable Tier 4 derived queries |
-| `cartridge-derive-count` | int | `3` | Max number of derived queries |
+| `knowledge models` | list[str] | `[]` | Paths to `.rlat` files this skill queries |
+| `knowledge model-queries` | list[str] | `[]` | Foundational queries (Tier 2), run every trigger |
+| `knowledge model-sources` | list[str] | `["references/"]` | Dirs to build skill-local knowledge model from |
+| `knowledge model-mode` | str | `"augment"` | Injection mode: augment, constrain, knowledge |
+| `knowledge model-budget` | int | `2000` | Max tokens for dynamic injection (Tiers 2+3+4) |
+| `knowledge model-rebuild` | str | `"none"` | Rebuild policy: none, on-change, daily |
+| `knowledge model-derive` | bool | `true` | Enable Tier 4 derived queries |
+| `knowledge model-derive-count` | int | `3` | Max number of derived queries |
+
+The parser accepts `knowledge model-*` as the canonical form. Internal dataclass attributes (`SkillConfig.cartridge_mode`, `cartridge_budget`, ...) retain the `cartridge_*` names for back-compat with the implementation; the user-facing contract is the YAML keys above.
 
 ### Injection Modes
 
@@ -386,11 +390,11 @@ cartridge-derive-count: 3                      # max derived queries
 
 ### Backwards Compatibility
 
-Skills without any `cartridge-*` fields work exactly as they do today. A skill can adopt incrementally:
+Skills without any `knowledge model-*` fields work exactly as they do today. A skill can adopt incrementally:
 
-1. Add `cartridges:` only -> enables Tier 3 (user query search)
-2. Add `cartridge-queries:` -> enables Tier 2 (foundational context)
-3. Leave `cartridge-derive: true` (default) -> enables Tier 4 (derived queries)
+1. Add `knowledge models:` only -> enables Tier 3 (user query search)
+2. Add `knowledge model-queries:` -> enables Tier 2 (foundational context)
+3. Leave `knowledge model-derive: true` (default) -> enables Tier 4 (derived queries)
 
 ---
 
@@ -409,7 +413,7 @@ No build step needed. Multiple skills can reference the same knowledge model.
 ### Pattern B: Skill-Local Knowledge Model
 
 ```yaml
-cartridge-sources:
+knowledge model-sources:
   - references/
 ```
 
@@ -421,7 +425,7 @@ cartridge-sources:
 knowledge models:
   - .rlat/fabric-docs.rlat
   - knowledge-models/my-skill.rlat
-cartridge-sources:
+knowledge model-sources:
   - references/
 ```
 
@@ -454,7 +458,7 @@ User query arrives, skill triggers
 [3. Encode query once]                  <- shared encoder, reused for all tiers
     |
     v
-[4. Run Tier 2: foundational queries]   <- cartridge-queries resonate against knowledge models
+[4. Run Tier 2: foundational queries]   <- knowledge model-queries resonate against knowledge models
     |                                      each query routes to best-matching knowledge model
     |                                      via auto_route_query() on cached fields
     v
@@ -467,7 +471,7 @@ User query arrives, skill triggers
 [7. Merge + dedup all tiers]            <- same passage from multiple queries = count once
     |
     v
-[8. Budget cap (tokens)]               <- enforce cartridge-budget via _truncate_to_tokens
+[8. Budget cap (tokens)]               <- enforce knowledge model-budget via _truncate_to_tokens
     |                                      Tier 2: 40%, Tier 3: 30%, Tier 4: 30%
     v
 [9. Mode-aware gate]                   <- augment: full gate | knowledge: soft | constrain: skip
@@ -584,7 +588,7 @@ Reuses: `GatedProjector` and `GroundingProjector` (projector.py), `auto_route_qu
 ### Phase 4: Lifecycle
 **Commands**: `profile`, `freshness`, `gaps`, `compare`
 
-All phases are shipped as of v0.9.0. MCP tools `rlat_skill_route` and `rlat_skill_inject` are also live.
+All phases are shipped as of v0.9.0 (Phase 1-4 complete). The surface is stable through the current 0.11.0 Beta release and is carried into the v1.0.0 launch (2026-06-08). MCP tools `rlat_skill_route` and `rlat_skill_inject` are also live.
 
 ---
 
@@ -593,13 +597,13 @@ All phases are shipped as of v0.9.0. MCP tools `rlat_skill_route` and `rlat_skil
 | Scenario | Behaviour |
 |----------|----------|
 | Skill with no knowledge model fields | Works exactly as today. Zero change. |
-| `cartridges:` but no `cartridge-queries:` | Tier 2 empty, Tiers 1+3+4 only. |
-| `cartridge-queries:` but no `cartridges:` | Queries target skill-local knowledge model. |
+| `knowledge models:` but no `knowledge model-queries:` | Tier 2 empty, Tiers 1+3+4 only. |
+| `knowledge model-queries:` but no `knowledge models:` | Queries target skill-local knowledge model. |
 | Missing knowledge model file at runtime | Warning. Graceful fallback to Tier 1 only. |
 | Stale knowledge model | Still usable. `freshness` reports it. `on-change` auto-rebuilds. |
 | No derived queries supplied | Tier 4 empty. Budget shifts to Tier 3 (40/60 split). |
 | Derived query returns same passages as Tier 2/3 | Deduplicated by source_id. |
-| `cartridge-derive: false` | Tier 4 disabled. Budget splits 40/60 between T2/T3. |
+| `knowledge model-derive: false` | Tier 4 disabled. Budget splits 40/60 between T2/T3. |
 | Budget exceeded | Enforced via `_truncate_to_tokens`. Per-tier allocation. |
 | `constrain` mode + low energy | **Always inject** -- no gating. Use `GroundingProjector`. |
 | `augment` mode + low novelty | **Suppress** -- Tier 1 only. Model already knows this. |
@@ -621,7 +625,7 @@ Solution: `constrain` skips the gate entirely and uses `GroundingProjector`.
 
 RL already budgets in tokens (`MaterialiserConfig.token_budget`, projector char limits).
 Using lines would be inconsistent and unpredictable (a code block is 1 line but could be
-200 tokens). The frontmatter uses `cartridge-budget` in tokens. Internally, enforcement
+200 tokens). The frontmatter uses `knowledge model-budget` in tokens. Internally, enforcement
 uses `_estimate_tokens()` and `_truncate_to_tokens()` from the materialiser.
 
 ### SkillRuntime as a dedicated object vs CLI plumbing

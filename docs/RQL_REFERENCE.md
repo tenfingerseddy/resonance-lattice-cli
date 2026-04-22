@@ -11,7 +11,7 @@ aliases:
 
 > Complete reference for all RQL operations, types, and usage patterns.
 
-**Version**: 0.9.0 | **Operations**: ~271 across 10 domains + composition, lenses, temporal, access control
+**Version**: 0.11.0 Beta (v1.0.0 target: 2026-06-08) | **Operations**: ~271 across 10 domains + composition, lenses, temporal, access control
 
 ---
 
@@ -843,7 +843,9 @@ The manifest at `.rlat/manifest.json` indexes all knowledge models in the projec
 from resonance_lattice.discover import Manifest
 
 manifest = Manifest.load(".rlat/manifest.json")
-for c in manifest.knowledge models:
+# JSON on disk uses the canonical `"knowledge models"` key (with space);
+# the in-memory dataclass attribute is `.cartridges` for Python-identifier compatibility.
+for c in manifest.cartridges:
     print(f"{c.name}: {c.sources} sources, domain={c.domain}")
 ```
 
@@ -878,16 +880,18 @@ routes = auto_route_query(query_phase, {"docs": docs_field, "code": code_field})
 ```python
 from resonance_lattice.discover import check_freshness
 
-report = check_freshness(manifest.knowledge models[0], source_dir="./src")
+report = check_freshness(manifest.cartridges[0], source_dir="./src")
 print(f"{report.recommendation}")  # "fresh" or "stale -- rebuild recommended"
 ```
 
-### MCP Tools
+### MCP Tools (Discovery-Scoped)
+
+These two MCP tools are specific to the discovery and freshness surface. For the full list of 19 MCP tools exposed by the server, see [MCP](/docs/mcp#current-tool-surface).
 
 | Tool | Description |
 |------|-------------|
 | `rlat_discover` | List all available knowledge models with domain, freshness, and primer paths |
-| `rlat_freshness` | Check if a specific knowledge model needs rebuild |
+| `rlat_freshness` | Check if a specific knowledge model needs rebuild (remote-mode drift check against pinned SHA) |
 
 ---
 

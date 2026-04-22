@@ -17,8 +17,8 @@ Small bug fixes and doc improvements don't need prior discussion — send the PR
 ## Development setup
 
 ```bash
-git clone https://github.com/tenfingerseddy/Resonance-Lattice.git
-cd Resonance-Lattice
+git clone https://github.com/tenfingerseddy/resonance-lattice.git
+cd resonance-lattice
 pip install -e ".[dev]"
 ```
 
