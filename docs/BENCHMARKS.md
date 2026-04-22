@@ -1,0 +1,272 @@
+---
+title: Benchmarks
+slug: benchmarks
+description: The main evidence page for Resonance Lattice: what was measured, what the results show, and what not to overclaim.
+nav_group: Deep Dives
+nav_order: 30
+aliases:
+---
+
+# Benchmarks
+
+## What This Page Is For
+
+This is the main evidence page for repo-first evaluation. Use it when you want to know what the strongest current results are, what they actually mean for adoption, and which claims are well supported versus still early.
+
+For the product thesis, see [Overview](/docs/overview). For operational benchmark details, thresholds, and baseline policy, see [Benchmark Runbook](/docs/benchmark-runbook).
+
+## Headline Results
+
+These are the strongest benchmark-backed claims the repo can make today:
+
+| Benchmark family | Headline result | What it means |
+|------------------|-----------------|---------------|
+| Internal retrieval quality | `Recall@5 = 1.00`, `MRR = 0.93`, `0%` failed retrieval on the internal Fabric benchmark | the full retrieval pipeline is strong on technical documentation corpora |
+| Token efficiency | `24.6x` fewer tokens than a grep-plus-read workflow | RL can give assistants much denser, more structured context than whole-file stuffing |
+| LLM grounding | hallucination rate `0.78 -> 0.16`, fact recall `0.27 -> 0.91` | the grounded context materially improves answer quality on the internal evaluation |
+| BEIR / cross-corpus | production pipeline beat flat E5 on `3 of 5` tested datasets | the workflow generalizes beyond the internal corpus, but not uniformly |
+| LongMemEval / long-horizon memory | `Recall@5 = 0.924`, `MRR = 0.919` on 500 LongMemEval_s questions | the pipeline retrieves the correct session in top-5 for 92% of long-horizon conversational-memory queries across six question types |
+| Comparative / Obsidian | `Recall@5 1.00` vs `0.81`, `MRR 0.929` vs `0.714` on the published comparison | RL outperformed the best tested Obsidian LLM wiki workflow as a retrieval layer for grounded assistant use |
+
+If the question is "why should I spend time setting this up when I already have a wiki, skills, or memory?", the most relevant sections on this page are [Comparative / Obsidian](#comparative-obsidian), [Token Efficiency](#token-efficiency), and [LLM Grounding](#llm-grounding). Those three together answer whether RL is just another context wrapper or a materially better retrieval layer. For Obsidian specifically, the claim is that RL is the stronger retrieval system for assistant grounding, not merely a different UI preference.
+
+## Internal Retrieval Quality
+
+### What this benchmark tests
+
+This is the main internal retrieval benchmark against a 24,635-chunk Microsoft Fabric documentation corpus with 100 evaluation questions. It measures whether the full RL pipeline returns the right evidence with the right ranking.
+
+### Headline numbers
+
+| | rlat (reranked) | Hybrid RRF | Flat E5 | BM25 |
+|---|---|---|---|---|
+| **Recall@5** | **1.00** | 0.94 | 0.93 | 0.84 |
+| **MRR** | **0.93** | 0.77 | 0.80 | 0.72 |
+| **Failed retrieval** | **0%** | 6% | 7% | 16% |
+
+### Strongest valid takeaway
+
+The full RL retrieval pipeline is strong on factual and technical corpora. It outperforms the published flat E5 and BM25 baselines on the internal evaluation, and it does so with zero failed retrieval on the reported run.
+
+### Limits and caveats
+
+- this is an internal corpus, not a universal benchmark
+- the result is for the full pipeline, not the dense field alone
+- the numbers should be read as evidence of workflow quality, not proof that RL wins every retrieval task
+
+### Raw outputs
+
+See `benchmarks/results/retrieval_gate/` and the procedure in [Benchmark Runbook](/docs/benchmark-runbook).
+
+## Pipeline Ablation
+
+### What this benchmark tests
+
+The ablation work asks where the observed quality actually comes from: dense semantic retrieval alone, hybrid retrieval, or the full reranked pipeline.
+
+### Headline read
+
+The dense field alone is not the whole story. The main gains come from combining:
+
+- dense semantic retrieval
+- lexical evidence injection
+- reranking
+
+### Strongest valid takeaway
+
+The product is best understood as a knowledge-model-plus-pipeline system, not as "just an embedding model" and not as "just a field." The measured quality comes from the full retrieval path.
+
+### Limits and caveats
+
+- the ablation story explains where quality comes from, but it is not a substitute for end-to-end benchmark runs
+- dense-only and reranked modes can behave differently depending on corpus type
+
+### Raw outputs
+
+See `benchmarks/results/ablation/` and `benchmarks/results/retrieval_gate/`.
+
+## Token Efficiency
+
+### What this benchmark tests
+
+This benchmark compares RL context output against a common fallback workflow: keyword search followed by reading whole files into the assistant.
+
+### Headline numbers
+
+| Approach | Tokens per query | What you get |
+|----------|-----------------|-------------|
+| **grep + read top 5 files** | 37,154 | raw file text with no ranking, structure, or coverage signal |
+| **rlat search (top 10)** | 1,518 | ranked passages with coverage, related topics, and source attribution |
+
+That is `24.6x` fewer tokens with structured context. Median compression on the run was `19.9x`.
+
+### Strongest valid takeaway
+
+RL is not only about finding relevant text. It is also about making the retrieved knowledge usable for assistants without wasting most of the prompt on irrelevant file content.
+
+### Limits and caveats
+
+- this is not a universal token-efficiency law; it is a benchmark against a concrete fallback workflow
+- the comparison is strongest when the alternative is whole-file reading, not when the alternative is a highly tuned retrieval system
+
+### Raw outputs
+
+See `benchmarks/results/token_efficiency/`.
+
+## LLM Grounding
+
+### What this benchmark tests
+
+This benchmark compares an LLM answering questions without RL context versus the same model answering with RL-supplied context. The judged dimensions include accuracy, completeness, groundedness, hallucination rate, and fact recall.
+
+### Headline numbers
+
+- hallucination rate: `0.78 -> 0.16`
+- fact recall: `0.27 -> 0.91`
+
+### Strongest valid takeaway
+
+When the assistant is grounded in RL context, answer quality improves materially on the current internal evaluation. This is one of the strongest practical reasons to adopt the knowledge model workflow.
+
+### Limits and caveats
+
+- this is an answer-quality benchmark, not a pure retrieval benchmark
+- the result depends on both the retrieval path and the LLM/judge setup
+- the numbers support "RL improves grounding in this evaluation," not "RL eliminates hallucinations"
+
+### Raw outputs
+
+See `benchmarks/results/llm_judge/`.
+
+## BEIR and Cross-Corpus
+
+### What this benchmark tests
+
+These runs test whether the production pipeline generalizes beyond the internal corpus on standard retrieval datasets.
+
+### Headline numbers
+
+Current published BEIR results use the production encoder path (`E5-large-v2`, no trained heads checkpoint):
+
+| BEIR dataset | rlat (best) | Mode | Flat E5 | BM25 |
+|---|---|---|---|---|
+| SciFact (5K) | **0.713** | reranked | 0.735 | 0.665 |
+| NFCorpus (3.6K) | **0.360** | reranked | 0.337 | 0.325 |
+| FiQA (57K) | **0.393** | reranked | 0.350 | 0.236 |
+| ArguAna (8.7K) | **0.492** | dense | 0.501 | 0.315 |
+| SciDocs (25K) | **0.189** | dense | 0.158 | 0.158 |
+
+### Strongest valid takeaway
+
+The production pipeline outperforms flat E5 on 3 of 5 tested datasets, and the best mode differs by corpus. That supports the idea that RL is a real retrieval workflow with cross-corpus value, not just an internal demo.
+
+### Limits and caveats
+
+- RL does not win every dataset
+- reranking helps on factual and technical corpora, but dense-only can be stronger on argument-style retrieval
+- corpus fit matters more than any single leaderboard headline
+
+### Raw outputs
+
+See `benchmarks/results/beir/`.
+
+## LongMemEval
+
+### What this benchmark tests
+
+[LongMemEval](https://arxiv.org/abs/2410.10813) is a long-horizon conversational memory benchmark. Each instance has 30–70 prior sessions (~200k tokens of past dialogue) and a question that references facts stated in specific session(s). The evaluator measures whether retrieval surfaces the correct source session out of that haystack.
+
+We report on LongMemEval_s (the 500-question variant), across six question types:
+
+- single-session-user, single-session-assistant, single-session-preference — fact stated once in one session
+- multi-session — fact synthesized across sessions
+- knowledge-update — superseded fact (latest statement is not always the right answer)
+- temporal-reasoning — fact dependent on *when* it was said
+
+### Headline numbers
+
+v14 config on LongMemEval_s (500 questions, 800/50 conversation chunking, E5-large-v2, auto-routed retrieval):
+
+| | v14 (auto) |
+|---|---|
+| **Recall@5** | **0.924** |
+| **Recall@10** | 0.961 |
+| **MRR** | 0.919 |
+| **Failed retrieval** | 2.8% |
+
+### Strongest valid takeaway
+
+The full RL pipeline is strong on multi-session conversational memory retrieval: it finds the correct session in the top-5 for 92% of long-horizon memory queries, across a mix of single-session, multi-session, knowledge-update, and temporal question types. The result comes from raw E5-large-v2 with no trained heads, combined with the adaptive query router (per-query-class routing of lexical, rerank, temporal, and recency knobs).
+
+### Limits and caveats
+
+- this is a **retrieval** benchmark; it is not directly comparable to Mem0's or Zep's published LongMemEval QA accuracy numbers (those are end-to-end GPT-4o-judged answer correctness, which depends on both retrieval and the answering LLM)
+- the 800/50 chunk geometry is tuned for conversation-style corpora and differs from the default document chunker
+- knowledge-update is the weakest category; session-amplification experiments (multi-granularity session vectors) gave partial wins on multi-session and preference but did not resolve the KU regression, so they remain research-only
+
+### Raw outputs
+
+See `benchmarks/results/longmemeval/v14_full500_800.json`.
+
+## Comparative / Obsidian
+
+### What this benchmark tests
+
+This comparison asks whether RL beats a strong Obsidian LLM wiki workflow, not a straw-man baseline. The tested vault was enriched with summaries, keywords, aliases, and 11,000+ wikilinks.
+
+### Headline numbers
+
+| | Obsidian (best) | rlat (reranked) |
+|---|---|---|
+| **Recall@5** | 0.81 | 1.00 |
+| **MRR** | 0.714 | 0.929 |
+| **Failed retrieval** | 19% | 0% |
+
+### Strongest valid takeaway
+
+RL outperformed the best tested Obsidian workflow on the published comparison. For grounded assistant retrieval over this corpus, the practical conclusion is that RL is the stronger system.
+
+### Limits and caveats
+
+- this is a retrieval claim, not a claim about every use of Obsidian as a note-taking environment
+- the benchmark is strongest as evidence about grounded assistant retrieval, not every possible graph-centric workflow
+- an exploratory 10-question multi-hop add-on exists in one comparative result payload, but it is not the canonical product-positioning benchmark and should not override the main published comparison
+
+### Raw outputs
+
+See `benchmarks/results/comparative/`.
+
+## Claims We Can Defend Today
+
+These claims are strong enough to use in repo-first positioning:
+
+- RL gives you a portable semantic knowledge artifact, not just retrieval plumbing
+- the full RL pipeline is strong on technical retrieval workloads
+- RL can reduce assistant token waste dramatically compared with whole-file reading workflows
+- RL materially improves grounding on the current answer-quality evaluation
+- the system has meaningful cross-corpus evidence, even if the gains are not uniform across every dataset
+- RL retrieves the correct session in the top-5 for 92% of LongMemEval_s long-horizon conversational-memory queries (retrieval metric, not end-to-end QA accuracy)
+
+## How To Read These Results
+
+These benchmarks support a strong case for Resonance Lattice, but they still need to be read with the right scope:
+
+- the results show that RL is strong on the evaluated technical retrieval and grounding workloads
+- they do not mean RL will beat every retrieval system, every corpus, or every benchmark
+- the strongest gains come from the full RL pipeline, not dense retrieval in isolation
+- advanced diagnostics such as contradiction signals are useful aids, not perfect truth detectors
+- experimental encoder or memory paths should be treated as research until they are backed by the same level of benchmark evidence as the production path
+
+## Where The Raw Evidence Lives
+
+The repo preserves scripts and outputs under:
+
+- `benchmarks/results/retrieval_gate/`
+- `benchmarks/results/ablation/`
+- `benchmarks/results/token_efficiency/`
+- `benchmarks/results/llm_judge/`
+- `benchmarks/results/beir/`
+- `benchmarks/results/longmemeval/`
+- `benchmarks/results/comparative/`
+
+Use [Benchmark Runbook](/docs/benchmark-runbook) when you need reproduction steps, thresholds, baseline policy, or CI gating guidance.

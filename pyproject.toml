@@ -1,0 +1,122 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "resonance-lattice"
+version = "0.11.0"
+description = "Portable project memory knowledge models for AI assistants"
+readme = "README.md"
+license = {text = "BSL-1.1"}
+requires-python = ">=3.11"
+authors = [
+    {name = "Kane Snyder"},
+]
+keywords = ["project-memory", "ai-assistants", "context-injection", "retrieval", "knowledge-knowledge model"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: Other/Proprietary License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.11",
+    "torch>=2.0",
+    "transformers>=4.36",
+    "safetensors>=0.4",
+    "datasketch>=1.6",
+    "zstandard>=0.22",
+    "faiss-cpu>=1.7",
+    "mcp>=1.0",
+]
+
+[project.optional-dependencies]
+stream = [
+    "watchdog>=4.0",
+]
+train = [
+    "datasets>=2.16",
+    "spacy>=3.7",
+    "accelerate>=0.25",
+]
+bench = [
+    "rank_bm25>=0.2",
+    "beir>=2.0",
+    "memory-profiler>=0.61",
+]
+saas = [
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "pydantic-settings>=2.0",
+    "PyJWT>=2.8",
+    "stripe>=8.0",
+    "azure-storage-blob>=12.19",
+    "azure-servicebus>=7.11",
+    "azure-cosmos>=4.5",
+]
+fast = [
+    "onnxruntime>=1.17",
+]
+wizard = [
+    "questionary>=2.0",
+]
+code = [
+    "tree-sitter>=0.23",
+    "tree-sitter-go>=0.23",
+    "tree-sitter-rust>=0.23",
+    "tree-sitter-typescript>=0.23",
+    "tree-sitter-java>=0.23",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=4.1",
+    "hypothesis>=6.90",
+    "ruff>=0.2",
+    "pyright>=1.1.400",
+]
+all = ["resonance-lattice[stream,train,bench,fast,code,wizard,dev]"]
+
+[project.scripts]
+rlat = "resonance_lattice.cli:main"
+
+[project.urls]
+Repository = "https://github.com/tenfingerseddy/Resonance-Lattice"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+ignore = [
+    "N802",   # uppercase function names (math conventions)
+    "N803",   # uppercase argument names (B, D, N, M are standard)
+    "N806",   # uppercase variable in function (scientific notation)
+    "N812",   # lowercase imported as non-lowercase
+    "N814",   # camelcase imported as constant (used for defensive aliases like `LocalStore as _LS`)
+    "N817",   # camelcase imported as acronym
+    "E501",   # line too long (enforced at review, not CI gate)
+    "E701",   # multiple statements on one line
+    "E741",   # ambiguous variable name (b, l, I are fine in math)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"src/resonance_lattice/cli.py" = ["E402"]
+"src/resonance_lattice/lattice.py" = ["E402"]
+"src/resonance_lattice/refresh.py" = ["E402"]      # late remote-mode import block (intentional)
+"src/resonance_lattice/serialise.py" = ["E402"]    # imports after module-level try/except
+"tests/test_lens_router.py" = ["E402"]             # imports after sys.path manipulation
+"tests/test_encoder_openvino_auto.py" = ["N801"]   # dummy inner classes mimic mock-library `class config:` shape
+"tests/test_mcp_ask.py" = ["N805"]                 # pytest hook signatures don't use `self`
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"
