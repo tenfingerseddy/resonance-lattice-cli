@@ -1,7 +1,7 @@
 ---
 title: Benchmarks
 slug: benchmarks
-description: The main evidence page for Resonance Lattice: what was measured, what the results show, and what not to overclaim.
+description: "The main evidence page for Resonance Lattice: what was measured, what the results show, and what not to overclaim."
 nav_group: Deep Dives
 nav_order: 30
 aliases:
