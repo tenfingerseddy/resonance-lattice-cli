@@ -3879,6 +3879,35 @@ def _apply_retrieval_flags(
         return payload
 
 
+def _parse_hybrid_arg(hybrid_arg: Any) -> tuple[str, float]:
+    """Resolve --hybrid to (mode, weight).
+
+    Returns one of:
+      * ("off", 0.0)       — no lexical pass
+      * ("auto", 0.3)      — auto mode, default weight
+      * ("on", weight)     — explicit enable (keyword or float)
+
+    Accepts legacy {off, on, auto} strings and the new float override.
+    """
+    from resonance_lattice.retrieval.lexical_band import DEFAULT_WEIGHT
+
+    if hybrid_arg is None or hybrid_arg == "off":
+        return ("off", 0.0)
+    if hybrid_arg == "auto":
+        return ("auto", DEFAULT_WEIGHT)
+    if hybrid_arg == "on":
+        return ("on", DEFAULT_WEIGHT)
+    try:
+        w = float(hybrid_arg)
+    except (TypeError, ValueError):
+        return ("auto", DEFAULT_WEIGHT)
+    if w <= 0.0:
+        return ("off", 0.0)
+    if w > 1.0:
+        w = 1.0
+    return ("on", w)
+
+
 def _apply_retrieval_flags_inner(
     args: argparse.Namespace,
     payload: dict,
@@ -3887,8 +3916,11 @@ def _apply_retrieval_flags_inner(
 ) -> dict:
     expand_mode = getattr(args, "expand", "off")
     hybrid_arg = getattr(args, "hybrid", "off")
+    lexical_impl = getattr(args, "lexical_impl", "band")
 
-    if expand_mode == "off" and hybrid_arg == "off":
+    hybrid_mode, hybrid_weight = _parse_hybrid_arg(hybrid_arg)
+
+    if expand_mode == "off" and hybrid_mode == "off":
         return payload
 
     results = payload.get("results") or []
@@ -3897,15 +3929,20 @@ def _apply_retrieval_flags_inner(
 
     source_root = _resolve_effective_source_root(args, lattice)
 
-    # --hybrid auto: on for external mode when source files are
-    # reachable; off for embedded mode (the lexical pass would have
-    # nothing to read). An explicit 'on' still requires source files —
-    # we can't run rg against in-memory store bytes.
-    if hybrid_arg == "auto":
-        store_mode = _detect_store_mode(lattice, lattice_path)
-        hybrid_on = (store_mode == "external") and (source_root is not None)
+    # --hybrid auto resolution:
+    #  * lexical-impl=band  → on for any store mode (doesn't need files)
+    #  * lexical-impl=rerank → on for external mode with source reachable
+    #                          (legacy constraint: rg needs files on disk)
+    if hybrid_mode == "auto":
+        if lexical_impl == "band":
+            hybrid_on = True
+        else:
+            store_mode = _detect_store_mode(lattice, lattice_path)
+            hybrid_on = (store_mode == "external") and (source_root is not None)
+    elif hybrid_mode == "on":
+        hybrid_on = lexical_impl == "band" or source_root is not None
     else:
-        hybrid_on = (hybrid_arg == "on") and (source_root is not None)
+        hybrid_on = False
 
     if expand_mode != "off" and source_root is not None:
         for r in results:
@@ -3913,7 +3950,12 @@ def _apply_retrieval_flags_inner(
 
     if hybrid_on:
         query = payload.get("query") or getattr(args, "query", "") or ""
-        reordered = _try_hybrid_rerank(results, query, source_root)
+        if lexical_impl == "band":
+            reordered = _try_lexical_band_rerank(
+                results, query, lattice, weight=hybrid_weight,
+            )
+        else:
+            reordered = _try_hybrid_rerank(results, query, source_root)
         if reordered is not None:
             payload["results"] = reordered
 
@@ -4014,6 +4056,61 @@ def _try_expand_one_result(
         result["full_text"] = expanded.text
         result["expansion_kind"] = expanded.expansion_kind
         result["expansion_char_offset"] = expanded.char_offset
+
+
+def _try_lexical_band_rerank(
+    results: list[dict],
+    query: str,
+    lattice: Any,
+    *,
+    weight: float,
+) -> list[dict] | None:
+    """Rerank `results` via the in-cartridge lexical band (WS3 #291).
+
+    Drop-in replacement for ``_try_hybrid_rerank`` that doesn't shell
+    out to ripgrep. Reads each hit's already-resolved text straight
+    from the result dict (full_text / summary), so it works across
+    bundled / local / remote store modes — none of them need file
+    access for this pass.
+
+    Returns a new list ordered by blended score, or None on any
+    unexpected failure (caller keeps the input ordering).
+    """
+    from resonance_lattice.retrieval.lexical_band import lexical_band_rerank
+
+    if not results or not query.strip() or weight <= 0.0:
+        return None
+
+    # Dimensionality: prefer the lattice's own D. Fall back to a
+    # reasonable default only if the lattice hasn't been passed in
+    # (e.g., composed-cartridge path that doesn't expose config).
+    dim = 2048
+    if lattice is not None:
+        cfg = getattr(lattice, "config", None)
+        if cfg is not None and getattr(cfg, "dim", None):
+            dim = int(cfg.dim)
+
+    def _get_text(r: dict) -> str | None:
+        return r.get("full_text") or r.get("summary") or None
+
+    # Preserve pre-blend score: if an earlier pass stored raw_score,
+    # we want to blend against that (not the already-blended value).
+    # lexical_band_rerank respects raw_score via its _get_attr helper;
+    # but results here are dicts without a raw_score field yet, so we
+    # add it up-front if we re-rank after another pass later.
+    for r in results:
+        if r.get("raw_score") is None:
+            r["raw_score"] = float(r.get("score") or 0.0)
+
+    reranked = lexical_band_rerank(
+        results, query, get_text=_get_text, dim=dim, weight=weight,
+    )
+    if len(reranked) != len(results):
+        return None
+    for r in reranked:
+        r["score"] = round(float(r.get("score") or 0.0), 4)
+        r["hybrid_reranked"] = True
+    return reranked
 
 
 def _try_hybrid_rerank(
@@ -7549,12 +7646,21 @@ def main() -> None:
                                 "'max' grows to the top-level unit. Requires external "
                                 "store or --source-root. Default: off.")
     p_search.add_argument("--hybrid", default="auto",
-                           choices=["off", "on", "auto"],
-                           help="Run a lexical (ripgrep) second pass over the retrieved "
-                                "neighbourhood and blend the signal into ranking. "
-                                "'auto' = on for external-mode knowledge models when source "
-                                "files are reachable, off otherwise. Fail-soft when "
-                                "ripgrep is unavailable. Default: auto.")
+                           help="Blend a lexical signal into ranking. Accepts: "
+                                "'off' (dense-only), 'on' / 'auto' (default weight 0.3), "
+                                "or a float in [0, 1] as an explicit blend weight. "
+                                "See --lexical-impl for which lexical backend runs. "
+                                "Default: auto.")
+    p_search.add_argument("--lexical-impl", default="band",
+                           choices=["band", "rerank"],
+                           dest="lexical_impl",
+                           help="Lexical backend when --hybrid is active. "
+                                "'band' (default) uses the in-cartridge lexical vector "
+                                "projection — works on bundled / local / remote stores, "
+                                "no ripgrep required. 'rerank' uses the legacy ripgrep "
+                                "second-pass (kept for parity during deprecation — "
+                                "external-mode + reachable source files only). "
+                                "WS3 #291.")
 
     # ── compose (advanced expression-based composition) ──
     p_compose = subparsers.add_parser(

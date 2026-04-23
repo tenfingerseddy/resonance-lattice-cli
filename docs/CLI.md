@@ -2131,18 +2131,79 @@ rlat memory stats
 
 ## Choosing the Right Command
 
-### search vs query vs resonate
+### Query surfaces at a glance
 
-| | `search` | `query` | `resonate` |
-|---|---------|---------|------------|
-| **Purpose** | Full enriched retrieval | Basic ranked passages | LLM-ready context |
-| **Default format** | text | text | context |
-| **Coverage profile** | Yes | No | No |
-| **Topic cascade** | Optional (`--cascade`) | No | No |
-| **Contradictions** | Optional (`--with-contradictions`) | No | No |
-| **Subgraph expansion** | Optional (`--subgraph`) | No | No |
-| **Warm worker** | Yes | No | No |
-| **Best for** | Interactive exploration | Scripts, debugging | Feeding an LLM |
+There are four CLI commands that take a query and return ranked evidence: `search`, `query`, `resonate`, and `ask`. They share the same retrieval core; the differences are in enrichment, defaults, and whether the command picks a lens for you.
+
+> `enriched_query` is the name of the underlying Python API method on `Lattice`; the CLI exposure is `rlat search`. If you see `enriched_query(...)` in code, it's the same pipeline as `rlat search`.
+
+| | `search` | `query` | `resonate` | `ask` |
+|---|---|---|---|---|
+| **Purpose** | Full enriched retrieval (primary surface) | Basic ranked passages | LLM-ready context | Auto-routes to the best lens |
+| **Default format** | `text` | `text` | **`context`** | `text` |
+| **Calls an LLM?** | No | No | No | No (heuristic routing) |
+| **Coverage profile** | Yes | No | No | Depends on lens |
+| **Topic cascade** | Optional (`--cascade`) | No | No | Depends on lens |
+| **Contradictions** | Optional (`--with-contradictions`) | No | No | Depends on lens |
+| **Subgraph expansion** | Optional (`--subgraph`) | No | No | Depends on lens |
+| **EML transforms / lenses** | Yes (`--sharpen`, `--soften`, `--contrast`, `--tune`, `--lens`) | No | No | Via `--contrast` / lens routing |
+| **Multi-model composition** | Yes (`--with`, `--through`, `--diff`) | No | No | Yes (`--with`, `--background`) |
+| **Memory filters** | Yes (`--session`, `--after`, `--before`, `--speaker`, `--recency-weight`) | No | No | No |
+| **Warm worker** | Yes | No | No | Inherits from routed lens |
+| **Best for** | Interactive exploration, full feature surface | Scripts, debugging, cheap deterministic calls | Feeding an LLM (primer-style output) | "Not sure which lens fits" |
+
+### Flags shared across all four query surfaces
+
+`--top-k`, `--format` (`text` / `json` / `context` / `prompt`), `--encoder`, `--mode` (`augment` / `constrain` / `knowledge` / `custom`), `--custom-prompt`.
+
+### Flags unique to each query surface
+
+**`rlat search` (the enriched surface):**
+
+- Retrieval controls: `-v/--verbose`, `--rerank auto|true|false`, `--onnx`, `--source-root`, `--no-worker`
+- Exploration: `--cascade`, `--cascade-depth`, `--with-contradictions`, `--contradiction-threshold`, `--subgraph`, `--subgraph-k`
+- Topic shaping: `--boost`, `--suppress`, `--boost-strength`, `--suppress-strength`
+- Spectral / EML transforms: `--sharpen`, `--soften`, `--contrast <bg.rlat>`, `--tune focus|explore|denoise`
+- Multi-model composition: `--with <other.rlat>` (repeatable, merges), `--through <lens.rlat>` (projects), `--diff <baseline.rlat>`, `--explain`, `--cascade-through`
+- Lenses and access: `--lens <path-or-builtin>`, `--access <.rlens>`
+- Memory filters: `--session`, `--after`, `--before`, `--speaker`, `--recency-weight`
+
+**`rlat resonate`:** `--source-root`, `--onnx`, `-v/--verbose`. A strict subset of `search`'s flag surface, oriented around LLM context output.
+
+**`rlat ask`:** `--explain` (dry-run: report which lens was picked and why), `--with <other.rlat>` (repeatable), `--background <bg.rlat>` (for contrast queries).
+
+Routing table for `ask` (heuristic, not LLM-driven):
+
+| Question type | Lens selected |
+|---|---|
+| Factoid, specific | `search --tune focus` |
+| Exploratory, broad | `search --tune explore` |
+| "What does it cover?" | `locate` |
+| "Summarize" | `profile` |
+| "How do these differ?" | `compare` / `negotiate` |
+| "What does X know that Y doesn't?" | `search --contrast` |
+
+### Short decision rule
+
+- **Default to `search`** — it's the richest surface and the main product entry point.
+- **`query`** when you want something cheap and scriptable, with no enrichment overhead.
+- **`resonate`** when the output goes straight into a prompt — it just saves typing `--format context`.
+- **`ask`** when you don't know whether to search, locate, profile, or compare.
+
+### Adjacent query surfaces
+
+| Command | Purpose |
+|---|---|
+| `locate <rlat> <q>` | Query *positioning* — where does this question sit in the field? No passages returned. |
+| `contradictions <rlat> <q>` | Destructive-interference detection between top-k passages. |
+| `compose "<expr>" <q>` | Expression-based multi-model pipelines (e.g. `merge(a,b)`). |
+| `probe <recipe> [q]` | Named diagnostic recipes (`health`, `novelty`, `saturation`, `band-flow`, `anti`, `gaps`). |
+| `memory recall <root> <q>` | 3-tier fusion across working / episodic / semantic memory. |
+| `skill search <skill> <q>` | Skill-scoped enriched search. |
+| `skill inject <skill> <q>` | 4-tier adaptive context injection (static + foundational + user + derived). |
+| `skill route <q>` | Rank discovered skills by relevance — semantic routing across skills. |
+| `serve` → `POST /search`, `/query` | HTTP facade over the same pipelines. |
+| `mcp <rlat>` | MCP stdio server for Claude Code and MCP-compatible clients. |
 
 ### Which command for my use case?
 

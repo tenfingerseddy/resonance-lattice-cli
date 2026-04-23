@@ -11,7 +11,8 @@ Modes:
   - field_only               — dense retrieval, no post-processing.
   - plus_cross_encoder       — dense + cross-encoder rerank (inline).
   - plus_cross_encoder_expanded — CE with B1 passage expansion.
-  - plus_hybrid              — dense + B3 ripgrep lexical rerank.
+  - plus_hybrid              — dense + B3 ripgrep lexical rerank (legacy).
+  - plus_lexical_band        — dense + in-cartridge lexical band rerank (WS3 #291).
   - bm25_only                — BM25 sparse retrieval only.
   - plus_rrf                 — dense (chunk→doc) ⊕ BM25 via RRF fusion.
   - plus_full_stack          — RRF candidate set → cross-encoder rerank.
@@ -38,6 +39,7 @@ VALID_MODES = (
     "plus_cross_encoder",
     "plus_cross_encoder_expanded",
     "plus_hybrid",
+    "plus_lexical_band",
     "bm25_only",
     "plus_rrf",
     "plus_full_stack",
@@ -132,6 +134,32 @@ def retrieve(
             for (sf, s, co, t) in raw_hits
         ]
         reranked = lexical_rerank(sh, query, source_root=source_root)
+        return _aggregate_chunks_to_docs_max(
+            reranked,
+            score_getter=lambda h: h.score,
+            path_getter=lambda h: h.source_file,
+        )
+
+    if mode == "plus_lexical_band":
+        # WS3 #291: the field-algebraic replacement for plus_hybrid.
+        # Same candidate set as plus_hybrid (enriched_query output);
+        # the only difference is how we compute the lexical signal —
+        # in-cartridge BM25-weighted feature-hashed projection instead
+        # of ripgrep over source files.
+        from resonance_lattice.retrieval.lexical_band import lexical_band_rerank
+
+        sh = [
+            ScoredHit(
+                source_file=sf, char_offset=co,
+                char_length=len(t), text=t, score=s,
+            )
+            for (sf, s, co, t) in raw_hits
+        ]
+        reranked = lexical_band_rerank(
+            sh, query,
+            get_text=lambda h: h.text,
+            dim=lattice.config.dim,
+        )
         return _aggregate_chunks_to_docs_max(
             reranked,
             score_getter=lambda h: h.score,
