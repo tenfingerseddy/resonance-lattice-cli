@@ -65,6 +65,97 @@ rlat memory primer ./memory/ -o .claude/memory-primer.md
 
 The dual primer system produces two complementary context documents: a **code primer** (what the project IS — structure, conventions, patterns) and a **memory primer** (how the work has unfolded — settled decisions, reversals, active threads). They de-duplicate against each other so an assistant does not pay twice for the same fact. Reference both from `CLAUDE.md` or your equivalent system prompt.
 
+### Wire Up Claude Code (Skill + Hooks)
+
+Resonance Lattice ships a first-class Claude Code integration — a **skill** that gives Claude direct access to `rlat` commands, plus **two lifecycle hooks** that keep your primer fresh and ingest each session into persistent memory. The files live at `.claude/skills/rlat/` in this repo; drop them into a consumer project to activate.
+
+#### What you get
+
+- **`rlat` skill** (`.claude/skills/rlat/SKILL.md`) — auto-triggers when Claude sees questions about your corpus ("how does X work", "why did we choose Y", "find the benchmark for Z"). The skill teaches Claude to use `rlat search` as its primary research tool for semantic / cross-file questions, and reserves `grep` for exact-symbol lookup. It also loads a dynamic slice of `project.rlat` into context at skill-invocation time so Claude has corpus-grounded background before it answers.
+
+- **SessionStart hook** (`.claude/skills/rlat/hooks/session-start.py`) — runs when Claude Code opens a session. Warns if any `*.rlat` knowledge model in the project root is older than `RLAT_STALE_HOURS` (default 72h) so Claude knows to rebuild before trusting results, and fires a background `rlat primer refresh` if the code primer (`.claude/resonance-context.md`) is stale or git-diverged. The current session never blocks on rebuild; the next session picks up the regenerated primer.
+
+- **SessionEnd hook** (`.claude/skills/rlat/hooks/memory-session-end.py`) — runs when a Claude Code session closes. Reads the session transcript and calls `rlat memory write` to append it to the project's layered memory store (working tier). First use auto-initializes the memory root at `./memory/`. Subsequent sessions recall prior context via the `memory-primer.md` generated in the previous step.
+
+Both hooks are **fail-soft**: exceptions go to stderr and the hook exits 0, so a broken rlat install never blocks Claude Code from opening or closing a session.
+
+#### Install into a consumer project
+
+From inside the repo (or any project where you want rlat-aware Claude Code):
+
+```bash
+# 1. Copy the skill + hooks into the project's .claude/ directory.
+#    If cloning this repo, they are already there.
+cp -r .claude/skills/rlat /your/project/.claude/skills/
+
+# 2. Merge the hook registration into .claude/settings.json.
+#    The example file shows the exact snippet:
+cat .claude/skills/rlat/hooks/settings.example.json
+```
+
+The `settings.example.json` block registers the two hooks via `${CLAUDE_PROJECT_DIR}` so it works from any working directory:
+
+```json
+{
+  "hooks": {
+    "SessionStart": [{
+      "hooks": [{
+        "type": "command",
+        "command": "python \"${CLAUDE_PROJECT_DIR}/.claude/skills/rlat/hooks/session-start.py\""
+      }]
+    }],
+    "SessionEnd": [{
+      "hooks": [{
+        "type": "command",
+        "command": "python \"${CLAUDE_PROJECT_DIR}/.claude/skills/rlat/hooks/memory-session-end.py\""
+      }]
+    }]
+  }
+}
+```
+
+Merge this into your existing `.claude/settings.json` under the `hooks` key. Then build `project.rlat` once (`rlat build ./docs ./src -o project.rlat`) so the skill has a knowledge model to search — the skill frontmatter declares `knowledge models: [project.rlat]` and expects it in the project root.
+
+#### Optional environment controls
+
+All env vars are optional; sensible defaults work for most projects.
+
+| Variable | Purpose | Default |
+|---|---|---|
+| `RLAT_STALE_HOURS` | Knowledge-model freshness threshold (SessionStart warning) | `72` |
+| `RLAT_MEMORY_ROOT` | Override memory root path | `<cwd>/memory` |
+| `RLAT_OPENVINO_DIR` | OpenVINO IR directory for fast encoding on Intel Arc iGPU / NPU | unset (PyTorch encode) |
+| `RLAT_OPENVINO_DEVICE` | `CPU` \| `GPU` \| `NPU` \| `AUTO` | `AUTO` when `RLAT_OPENVINO_DIR` is set |
+| `RLAT_ONNX_DIR` | ONNX backbone directory (alternative accelerator, Intel / NVIDIA CPUs) | unset (PyTorch encode) |
+| `RLAT_REBUILD_PRIMER` | Set to `1` to regenerate the memory primer after each SessionEnd ingest | unset |
+| `RLAT_CODE_CARTRIDGE` | Code-knowledge-model path passed to primer regen for cross-primer novelty filtering | unset |
+
+For on-device acceleration on Intel Arc, install the fast extra and export the backbone once:
+
+```bash
+pip install 'resonance-lattice[fast]'
+rlat export-onnx ./onnx_backbone/         # ONNX path
+# or
+rlat export-openvino ./openvino_backbone/ # OpenVINO path (Arc iGPU / NPU)
+export RLAT_OPENVINO_DIR=./openvino_backbone/
+```
+
+Encoding latency on the SessionEnd ingest drops 2–5× vs pure PyTorch CPU.
+
+#### Verify the wiring
+
+Open a Claude Code session in the project. You should see a SessionStart notification in the conversation transcript only if there is something to flag (stale knowledge model or primer). On session close, `./memory/` gets a new `working/` entry — inspect it with:
+
+```bash
+rlat memory profile ./memory/
+```
+
+If the hook didn't fire, the failure is silent by design (fail-soft). Check Claude Code's hook-error log or run the hook script manually to surface the exception:
+
+```bash
+echo '{"transcript_path": "/tmp/fake.jsonl"}' | python .claude/skills/rlat/hooks/memory-session-end.py
+```
+
 ### Choose CLI vs MCP vs HTTP
 
 #### CLI
